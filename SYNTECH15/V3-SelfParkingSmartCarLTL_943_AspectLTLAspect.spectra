@@ -1,0 +1,580 @@
+// Initial file contents for AspectLTL aspect file (*.altl)
+module AspectLTLAspect
+ 
+		env {CLEAR, BLOCKED} obstacle ;
+		
+		env {	TOO_CLOSE,
+							TOO_FAR,
+							CENTERED,
+							PS_TOO_FAR,
+							PS_TOO_CLOSE,
+							PS_CENTERED
+						 } sideSensor ;
+						 
+		env {	TOO_CLOSE,
+								TOO_FAR,
+								CENTERED,
+								PS_TOO_FAR,
+								PS_TOO_CLOSE,
+								PS_CENTERED
+							 } rearSideSensor ;
+							
+	
+		sys {MAX_RIGHT, MAX_LEFT, CENTER, ALIGN_RIGHT, ALIGN_LEFT} steeringMot ;
+		
+		sys {FWD, BWD} sensorMot ;
+							
+		sys {FWD, BWD, STOP, PARKING_BWD, PARKING_FWD, PREPARE_PERPENDICULAR_BWD,PERPENDICULAR_BWD, BYPASS_FWD} engineMot ;
+		
+		sys {	SEEKING_FOR_PS,
+							MEASURE_PARKING,
+							BYPASSING,
+							PREPARE_FOR_PARALLEL_PARKING,
+							PARALLEL,
+							PERPENDICULAR,
+							PARKED
+						} carStatus ;
+		sys Int(0..14) spec_counter ;
+		
+		sys Int(0..6) spec_obstacleCounter ;
+
+	define
+		counterLimit := 14;
+		
+	define 
+		phaseNone := 0;
+		
+	define 
+		firstPhase := 1;
+		
+	define 
+		secondPhase := 2;
+		
+	define 
+		thirdPhase := 3;
+			
+	define
+		weGotSideSensorSeekingValues := (sideSensor = TOO_CLOSE | sideSensor = TOO_FAR | sideSensor = CENTERED);
+	
+	define
+		weGotRearSideSensorSeekingValues := (rearSideSensor = TOO_CLOSE | rearSideSensor = TOO_FAR | rearSideSensor = CENTERED);
+		
+	define
+		weGotSideSensorMeasuringValues := (sideSensor = PS_TOO_CLOSE | sideSensor = PS_TOO_FAR | sideSensor = PS_CENTERED);	
+	
+	define
+		weGotRearSideSensorMeasuringValues := (rearSideSensor = PS_TOO_CLOSE | rearSideSensor = PS_TOO_FAR | rearSideSensor = PS_CENTERED);	
+		
+	define
+		Stop := (engineMot = STOP);
+
+	define
+		suitableParallelPS := 6;
+		
+	define
+		suitablePerpendicularPS := 4;
+		
+	define
+		preparingParallelSteps := 2;
+	
+	define
+		capablePerpendicular := (spec_counter >= suitablePerpendicularPS);
+	
+	define
+		keepCarStatus := (next(carStatus) = carStatus);
+		
+	define
+		keepCounterValue := (next(spec_counter) = spec_counter);
+
+	define
+		movingFwd := (engineMot = FWD | engineMot = PARKING_FWD | engineMot = BYPASS_FWD);
+		
+	define
+		movingBwd := (engineMot = BWD | 
+						engineMot = PARKING_BWD | 
+						engineMot = PREPARE_PERPENDICULAR_BWD | 
+						engineMot = PERPENDICULAR_BWD
+		);
+	
+	define
+		rearTooFar :=   (rearSideSensor = TOO_FAR | rearSideSensor = PS_TOO_FAR);
+	
+	define
+		rearTooClose := (rearSideSensor = TOO_CLOSE | rearSideSensor = PS_TOO_CLOSE);
+		
+	define
+		rearCentered := (rearSideSensor = CENTERED | rearSideSensor = PS_CENTERED);
+		
+	define
+		frontCentered := (sideSensor = CENTERED | sideSensor = PS_CENTERED);
+		
+	define
+		frontTooFar :=   (sideSensor = TOO_FAR | sideSensor = PS_TOO_FAR);
+	
+	define
+		frontTooClose := (sideSensor = TOO_CLOSE | sideSensor = PS_TOO_CLOSE);
+		
+	define
+		movingNextToObstacle := (carStatus = BYPASSING & spec_counter = 7);
+		
+	/* Init state*/
+	guarantee
+		(carStatus = SEEKING_FOR_PS & sensorMot = FWD & spec_counter = 0);
+		
+	/* Do not run into obstacles*/
+	guarantee
+		G ((obstacle = BLOCKED) -> 
+			(Stop)
+		);
+		
+	/* In case of an obstacle, keep the car status and the counter value as they were
+	 * (except for some cases, that we need to change the car status or the counter)
+	 */
+	guarantee
+		G ((obstacle = BLOCKED & !(carStatus = SEEKING_FOR_PS | carStatus = MEASURE_PARKING | 
+			(carStatus = BYPASSING & spec_counter = 10) | (carStatus=PERPENDICULAR & spec_counter = thirdPhase)
+		)) 
+			-> 	(keepCarStatus & keepCounterValue
+			)
+		);
+	
+	/* Initiating the obstacleCounter in the first time we are blocked */
+	guarantee
+		G((carStatus != BYPASSING & 
+			PREV(obstacle = CLEAR) & 
+			obstacle = BLOCKED
+		) -> (spec_obstacleCounter = 0));
+	
+	/* Don't turn the direction of the sensor if you don't need to */
+	guarantee
+		G((obstacle = BLOCKED & 
+			carStatus != BYPASSING & 
+			(PREV(sensorMot = BWD) & !movingFwd)
+		) -> (sensorMot = BWD));
+	
+	/* Look where you are driving */
+	guarantee
+		G(movingBwd -> sensorMot = BWD);
+
+	guarantee
+		G(movingFwd -> sensorMot = FWD);
+		
+	/* Final goal! */
+	guarantee
+  GF (carStatus=PARKED);
+		
+	/* Reached the final goal */
+	guarantee
+		G((carStatus = PARKED
+		) ->
+			((Stop) & (keepCarStatus) & steeringMot = CENTER )
+		);
+		
+/**********************************************************************************/
+/******************************** wall alignment **********************************/
+/**********************************************************************************/
+	
+	/* set of options available while seeking for parking spot */
+	guarantee
+		G((carStatus = SEEKING_FOR_PS)-> 
+			((steeringMot = ALIGN_RIGHT | steeringMot = CENTER | steeringMot = ALIGN_LEFT) & 
+				(engineMot = FWD | engineMot = STOP) & (spec_counter = 0)
+			)
+		);
+	
+	/* Wall alignment instructions */
+	guarantee
+		G((carStatus = SEEKING_FOR_PS | carStatus = PREPARE_FOR_PARALLEL_PARKING | carStatus = MEASURE_PARKING | movingNextToObstacle)-> 
+			(
+				((sideSensor = TOO_CLOSE	| sideSensor = PS_TOO_CLOSE) 	& steeringMot = ALIGN_LEFT)		| 
+				((sideSensor = TOO_FAR		| sideSensor = PS_TOO_FAR)		& steeringMot = ALIGN_RIGHT)	| 
+				((sideSensor = CENTERED		| sideSensor = PS_CENTERED) 	& steeringMot = CENTER)
+			)
+		);
+	
+	/* If we still didn't find potential parking spot, and there's no obstacle - keep seeking */
+	guarantee
+		G((carStatus = SEEKING_FOR_PS & 
+			(weGotSideSensorSeekingValues) & 
+			obstacle = CLEAR
+		) -> 
+			(keepCarStatus)
+		);
+	
+	/* A potential parking spot was found, and there's no obstacle - move to measuring mode */
+	guarantee
+		G((carStatus = SEEKING_FOR_PS & 
+			(weGotSideSensorMeasuringValues) & 
+			obstacle = CLEAR
+		)
+			 -> (
+			 	(engineMot = STOP) &
+			 	(next(carStatus = MEASURE_PARKING)) & 
+			 	(next(spec_counter) = 1)
+			)
+		);
+	
+	/* We bypass obstacles only when we're seeking for parking spot or when measuring one. 
+	 * In all other cases we assume the obstacle will go away (temporary obstacle)
+	 */
+	assumption
+  respondsTo((obstacle=BLOCKED&(carStatus!=MEASURE_PARKING&carStatus!=SEEKING_FOR_PS)),(obstacle=CLEAR));
+
+/**********************************************************************************/
+/********************** measure parking spaces specs ******************************/
+/**********************************************************************************/
+	/* Set of options available while measuring for parking spot */
+	guarantee
+		G((carStatus = MEASURE_PARKING)-> 
+			((steeringMot = ALIGN_RIGHT | steeringMot = CENTER | steeringMot = ALIGN_LEFT) & 
+			(engineMot = FWD | engineMot = STOP) & (spec_counter <= suitableParallelPS))
+		);
+	
+	/* Don't stop if you're measuring parking spot, and there's no obstacle */
+	guarantee
+		G((carStatus = MEASURE_PARKING & obstacle = CLEAR & weGotSideSensorMeasuringValues)	->
+			(engineMot != STOP)
+		);	
+
+	/* If we are measuring a parking spot and we didn't measure enough space, keep measuring */
+	guarantee
+		G((carStatus = MEASURE_PARKING & 
+			(weGotSideSensorMeasuringValues) & 
+			(spec_counter < suitableParallelPS) &
+			obstacle = CLEAR
+		) -> 
+			(keepCarStatus)
+		);
+	
+	/* Do not count over the limit */
+	guarantee
+		G((spec_counter <= counterLimit));
+		
+	/* If the parking spot ended and there is no sufficient space (not parallel and not perpendicular), 
+	 * keep seeking for another parking spot
+	 */
+	guarantee
+		G((carStatus = MEASURE_PARKING & 
+			(weGotSideSensorSeekingValues) & 
+			obstacle = CLEAR & 
+			spec_counter < suitableParallelPS & 
+			!capablePerpendicular 
+		) -> 
+			(next(carStatus = SEEKING_FOR_PS)) 
+		);
+		
+	/* If the parking spot ended and we can park perpendicular, move to park perpendicular */
+	guarantee
+		G((carStatus = MEASURE_PARKING & 
+			(weGotSideSensorSeekingValues) & 
+			obstacle = CLEAR & 
+			spec_counter < suitableParallelPS & 
+			capablePerpendicular 
+		) -> 
+				(next(carStatus = PERPENDICULAR) &
+				next(spec_counter = firstPhase) &
+				sensorMot = BWD & 
+				Stop
+			) 
+		);
+	
+	/* While measuring the parking spot, increase counter if needed */
+	guarantee
+		G((carStatus = MEASURE_PARKING & 
+			(weGotSideSensorMeasuringValues) & 
+			obstacle = CLEAR & 
+			engineMot = FWD & 
+			spec_counter < suitableParallelPS
+		) ->
+			(next(spec_counter) = (spec_counter + 1))
+		);
+	
+	/* If the parking spot ended and we can park parallel, move to preparing to parllel */
+	guarantee
+		G ((carStatus = MEASURE_PARKING & 
+			spec_counter = suitableParallelPS  & 
+			obstacle = CLEAR 
+		) -> 
+			(
+				(next(carStatus) = PREPARE_FOR_PARALLEL_PARKING) &
+				(next(spec_counter) = 0)
+				));
+				
+	/* Goal for this stage */		
+	guarantee
+  respondsTo(carStatus=MEASURE_PARKING,(carStatus=PREPARE_FOR_PARALLEL_PARKING|carStatus=PERPENDICULAR));
+		
+	/* How to achieve the goal above */
+	assumption 
+  respondsTo((obstacle=CLEAR&engineMot=FWD),(carStatus=PREPARE_FOR_PARALLEL_PARKING|carStatus=PERPENDICULAR));
+
+/**********************************************************************************/
+/*************************** Preparing for parallel parking************************/
+/**********************************************************************************/
+		
+	/* Set of options available while preparing for parking */
+	guarantee
+		G((carStatus = PREPARE_FOR_PARALLEL_PARKING)-> 
+			((steeringMot = ALIGN_RIGHT | steeringMot = CENTER | steeringMot = ALIGN_LEFT) & 
+			(engineMot = FWD | engineMot = STOP))
+		);
+		
+//	LTLSPEC
+//		G((carStatus = PREPARE_FOR_PARALLEL_PARKING & obstacle = BLOCKED)
+//			-> (keepCounterValue)
+//		);
+	
+	/* Keep performing the needed steps forward in order to prepare for parallel parking */
+	guarantee
+		G((carStatus = PREPARE_FOR_PARALLEL_PARKING & obstacle = CLEAR
+			& spec_counter < preparingParallelSteps
+		) ->
+			((next(spec_counter) = (spec_counter + 1)) & engineMot = FWD)
+		);
+	
+	/* Keep the car status while performing the preparing, even when you are blocked~ */	
+	guarantee
+		G((carStatus = PREPARE_FOR_PARALLEL_PARKING & 
+			(spec_counter < preparingParallelSteps)
+		) -> 
+			(keepCarStatus)
+		);
+	
+	/* We completed the preparing steps, now move to actually park paralell */
+	guarantee
+		G ((carStatus = PREPARE_FOR_PARALLEL_PARKING & 
+			spec_counter = preparingParallelSteps & 
+			obstacle = CLEAR
+		) -> 
+			( 
+				(Stop) &
+				(next(carStatus) = PARALLEL) &
+				next(spec_counter = firstPhase) &
+				(sensorMot = BWD)				
+				));
+
+    /* Perform the necessary actions in order to reach the suitable number of steps before parking */
+	guarantee
+  respondsTo(carStatus=PREPARE_FOR_PARALLEL_PARKING,(spec_counter=preparingParallelSteps));
+	
+	/* How to achieve the goal above */
+	assumption 
+  respondsTo(((obstacle=CLEAR&carStatus=PREPARE_FOR_PARALLEL_PARKING)->(engineMot=FWD)),(carStatus=PARALLEL));
+		
+/**********************************************************************************/
+/******************************** parking parallel ********************************/
+/**********************************************************************************/
+
+	/* Set of options available while parking parallel */
+	guarantee
+		G((carStatus = PARALLEL) ->
+			((steeringMot = MAX_RIGHT | steeringMot = CENTER | steeringMot = MAX_LEFT) & 
+			(engineMot = PARKING_BWD | engineMot = STOP))
+		);
+	
+	/* Performing first step of the parallel parking */
+	guarantee
+		G((carStatus = PARALLEL & 
+			spec_counter = firstPhase & 
+			obstacle = CLEAR
+		) ->
+			(engineMot = PARKING_BWD  & (keepCarStatus) & steeringMot = MAX_RIGHT & next(spec_counter = secondPhase))
+		);
+	
+	/* Performing second step of the parallel parking */
+	guarantee
+		G((carStatus = PARALLEL & 
+			spec_counter = secondPhase & 
+			obstacle = CLEAR
+		) ->
+			(engineMot = PARKING_BWD & (next(carStatus = PARKED)) & steeringMot = MAX_LEFT)
+		);
+	
+/**********************************************************************************/
+/****************************** parking perpendicular *****************************/
+/**********************************************************************************/
+
+	/* Set of options available while parking perpendicular */
+	guarantee
+		G((carStatus = PERPENDICULAR) ->
+			((steeringMot = MAX_RIGHT | steeringMot = CENTER | steeringMot = MAX_LEFT) & 
+			(engineMot = PARKING_FWD | engineMot = STOP | engineMot = PREPARE_PERPENDICULAR_BWD | engineMot = PERPENDICULAR_BWD))
+		);
+	
+	/* Performing first step of the perpendicular parking */
+	guarantee
+		G((carStatus = PERPENDICULAR & 
+			spec_counter = firstPhase & 
+			obstacle = CLEAR
+		) ->
+			(engineMot = PREPARE_PERPENDICULAR_BWD  & (keepCarStatus) & steeringMot = CENTER & next(spec_counter = secondPhase))
+		);	
+	
+	/* Performing second step of the perpendicular parking */
+	guarantee
+		G((carStatus = PERPENDICULAR & 
+			spec_counter = secondPhase & 
+			obstacle = CLEAR
+		) ->
+			(engineMot = PARKING_FWD  & (keepCarStatus) & steeringMot = MAX_LEFT & next(spec_counter = thirdPhase))
+		);
+	
+	/* Performing third step of the perpendicular parking */
+	guarantee
+		G((carStatus = PERPENDICULAR & 
+			spec_counter = thirdPhase & 
+			obstacle = CLEAR
+		) ->
+			(engineMot = PERPENDICULAR_BWD & next(carStatus = PARKED) & steeringMot = MAX_RIGHT)
+		);
+
+/**********************************************************************************/
+/************************************ bypassing ***********************************/
+/**********************************************************************************/
+
+	/* Don't turn the direction of the sensor if you don't need to */
+	guarantee
+		G((obstacle = BLOCKED & 
+			carStatus = BYPASSING & 
+			(spec_counter = 1 | spec_counter = 2 | spec_counter = 11) &
+			(PREV(sensorMot = BWD) & !movingFwd)
+		) -> (sensorMot = BWD));
+
+	/* In order to avoid false detection of obstacles, and to avoid bypassing temporary obstacles, 
+	 * we will wait 3 cycles before we start to bypass */
+	guarantee
+		G(((carStatus = SEEKING_FOR_PS | carStatus = MEASURE_PARKING) & 
+			spec_obstacleCounter < 2 & obstacle = BLOCKED
+		) ->
+			(Stop & (next(spec_obstacleCounter) = spec_obstacleCounter + 1) & keepCarStatus & keepCounterValue)
+		);
+		
+	/* This is probably a real obstacle, need to bypass*/
+	guarantee
+		G(((carStatus = SEEKING_FOR_PS | carStatus = MEASURE_PARKING) & 
+			spec_obstacleCounter = 2 & obstacle = BLOCKED & PREV(obstacle = BLOCKED)
+		) ->
+			(Stop & 
+				next(carStatus = BYPASSING) & 
+				next(spec_counter = 0)
+			)
+		);
+
+	/* As long as we are in the bypassing process, keep the car status */				
+	guarantee
+	G((carStatus = BYPASSING & spec_counter < 10) -> (keepCarStatus));
+	
+	/* Preparing to bypass - two steps backwards */
+	guarantee
+		G((carStatus = BYPASSING & spec_counter = 0 )->
+			(Stop & sensorMot = BWD)
+		);
+	
+	guarantee
+		G((carStatus = BYPASSING & spec_counter = 0 & obstacle = CLEAR )->
+			(next(spec_counter = 1)  )
+		);
+		
+	guarantee
+		G((carStatus = BYPASSING & spec_counter = 1 & obstacle = CLEAR )->
+			(engineMot = BWD & steeringMot = CENTER & next(spec_counter = 2) )
+		);
+		
+	guarantee
+		G((carStatus = BYPASSING & spec_counter = 2 & obstacle = CLEAR )->
+			(engineMot = BWD & steeringMot = CENTER & next(spec_counter = 3) )
+		);
+		
+	guarantee
+		G((carStatus = BYPASSING & spec_counter = 3 )->
+			(Stop & sensorMot = FWD )
+		);
+		
+	/* Starting to bypass */
+	guarantee
+		G((carStatus = BYPASSING & spec_counter = 3 & obstacle = CLEAR )->
+			(next(spec_counter = 4) )
+		);
+		
+	guarantee
+		G((carStatus = BYPASSING & spec_counter = 4 & obstacle = CLEAR )->
+			(engineMot = BYPASS_FWD & steeringMot = MAX_LEFT & next(spec_counter = 5) )
+		);
+		
+	/* Keep moving forward and center if we are too close */
+	guarantee
+		G((carStatus = BYPASSING & spec_counter = 5 & obstacle = CLEAR & sideSensor = TOO_CLOSE)->
+			(engineMot = FWD & steeringMot = CENTER & next(spec_counter = 6))
+		);
+		
+	guarantee
+		G((carStatus = BYPASSING & spec_counter = 5 & obstacle = CLEAR & sideSensor != TOO_CLOSE)->
+			(Stop & steeringMot = CENTER & next(spec_counter = 6))
+		);
+		
+	/* Completing first phase of bypassing - moving right and forward */
+	guarantee
+		G((carStatus = BYPASSING & spec_counter = 6 & obstacle = CLEAR )->
+			(engineMot = PARKING_FWD & 
+				steeringMot = MAX_RIGHT & 
+				next(spec_counter = 7) & 
+				next(spec_obstacleCounter = 0 )
+		));
+		
+	/* Passing next to the obstacle - performing wall alignment  */
+	guarantee
+		G((movingNextToObstacle & 
+			(weGotSideSensorSeekingValues | weGotRearSideSensorSeekingValues) &
+			obstacle = CLEAR & spec_obstacleCounter < 3
+		)->
+			(keepCounterValue & next(spec_obstacleCounter = 0 ))
+		);
+	
+	/* We already passed the obstacle, need to return back */
+	guarantee
+		G((movingNextToObstacle & 
+			weGotSideSensorMeasuringValues & 
+			weGotRearSideSensorMeasuringValues & 
+			obstacle = CLEAR & spec_obstacleCounter < 6
+		)->
+			(keepCounterValue & (next(spec_obstacleCounter) = 1 + spec_obstacleCounter))
+		);
+	
+	guarantee
+		G((movingNextToObstacle & obstacle = CLEAR & spec_obstacleCounter = 6)->
+			(Stop & sensorMot = BWD & next(spec_counter = 8)));
+			
+	guarantee
+		G((carStatus = BYPASSING & spec_counter = 8 & obstacle = CLEAR )->
+			(engineMot = PARKING_BWD & steeringMot = MAX_RIGHT & next(spec_counter = 9) )
+		);
+	
+	guarantee
+		G((carStatus = BYPASSING & spec_counter = 9 & obstacle = CLEAR )->
+			(engineMot = PARKING_BWD & steeringMot = MAX_LEFT & next(spec_counter = 10))
+		);
+		
+	/* Compeleted the bypass - moving back to seeking mode */
+	guarantee
+		G((carStatus = BYPASSING & spec_counter = 10)->
+			(sensorMot = FWD & Stop & next(carStatus = SEEKING_FOR_PS))
+		);
+	
+	/* While bypassing, stay in this status or move to seeking after done */
+	guarantee
+		G((carStatus = BYPASSING) -> (next(carStatus = SEEKING_FOR_PS) | next(carStatus = BYPASSING)));
+		
+	/* Goal for this stage, complete the bypass */
+	guarantee
+  respondsTo((carStatus=BYPASSING),(carStatus=SEEKING_FOR_PS));
+		
+	/* How to achieve the goal above */
+	assumption
+  respondsTo(((carStatus=BYPASSING)&engineMot=FWD),(carStatus=SEEKING_FOR_PS));
+	
+pattern respondsTo(trigger, response) {
+  var boolean responded;
+  responded;
+  G (next(responded) iff (response or responded and !trigger));
+  GF (responded);
+}

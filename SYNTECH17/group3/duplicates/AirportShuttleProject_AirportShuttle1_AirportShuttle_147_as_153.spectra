@@ -1,0 +1,175 @@
+import "../patterns/DwyerPatterns.spectra"
+
+module AirportShuttle
+
+env Station station;
+env Button stopButton;
+env DoorStatus doorStatus;
+env boolean technicianAck;
+
+sys MotorCmd mLeft;
+sys MotorCmd mRight;
+sys DoorOp doorReq;
+sys boolean startTechnicalJob;
+
+type Button = {PRESSED, RELEASED};
+type MotorCmd = {FWD, STOP, BWD};
+type Station = {ONE, TWO, THREE, FOUR, NONE};
+type DoorOp = {OPEN, CLOSE, NIL};
+type DoorStatus = {OPENED, CLOSED, IN_PROCESS};
+
+define 
+  stopping := mLeft = STOP & mRight = STOP;
+  forwarding := mLeft = FWD & mRight = FWD;
+  atStation := station != NONE;
+  enteringStation := (station != NONE) & (PREV (station = NONE));
+  openDoorReq := doorReq = OPEN;
+  closeDoorReq := doorReq = CLOSE;
+  doorCounterIncreased := (PREV (next(doorOperationsCounter) - doorOperationsCounter = 1) );
+
+///////////////////////////////////////
+// Environment Specification
+/////////////////////////////////////
+ 
+// Leave station eventually
+assumption leaveStationEventually:
+  pRespondsToS (forwarding, !atStation | stopping);
+  
+// Station does not change when stopping
+assumption stationDoesNotChangeWhenStopping:
+  G (stopping -> station = next(station));
+
+// Not always stop at nearest station
+assumption notAlwaysStopAtNearestStation:
+  GF !stopAtNearestStation;
+
+assumption
+  stopButton=RELEASED;
+
+// Initially door is closed
+assumption initiallyDoorIsClosed:
+  doorStatus=CLOSED;
+
+// Done door process eventually
+assumption doneDoorProcessEventually:
+  GF doorStatus!=IN_PROCESS;
+    
+// No strange doorStatus 1
+assumption noStrangeDoorStatus1:
+  G (next(doorStatus=OPENED) -> (doorStatus=IN_PROCESS));
+  
+// No strange doorStatus 2
+assumption noStrangeDoorStatus2:
+  G (next(doorStatus=CLOSED) -> (doorStatus!=OPENED));
+
+// door in process only when asked to
+assumption
+  G (next(doorStatus = IN_PROCESS) -> (doorStatus = IN_PROCESS) | openDoorReq  | closeDoorReq);
+
+// No one press on stopButton while atStation
+assumption
+  G (atStation -> stopButton=RELEASED);
+
+// Initially no technician ack
+assumption initiallyNoTechnicianAck:
+  !technicianAck;
+  
+assumption doneTechnicianActionEventually:
+  pRespondsToS(techGuyInAction, technicianAck);
+ 
+// No strange technician acks
+assumption noStrangeTechnicianAcks:
+  G (next(technicianAck) -> (techGuyInAction & !technicianAck));
+
+
+///////////////////////////////////////
+// System Specification
+///////////////////////////////////////
+
+// Initial state 
+guarantee initialState:
+stopping & doorReq=NIL;
+
+// Stop if at station and stopAtNearestStation is true 
+guarantee stopAtNearestStationWhenAsked:
+G (atStation & stopAtNearestStation -> stopping);
+
+/**
+ * monitor stopAtNearestStation becomes true when stopButton is pressed
+ * TBD
+ */
+monitor boolean stopAtNearestStation {
+  // Initially not stopAtNearestStation
+  !stopAtNearestStation;
+  // If stopButton is pressed - change stopAtNearestStation to true
+  G ( (stopButton = PRESSED & !doorCounterIncreased) -> next(stopAtNearestStation));
+  // If doorCounterIncreased - change stopAtNearestStation to false
+  G ( (doorCounterIncreased) -> next(!stopAtNearestStation));
+  // If
+  G ( ((stopButton = RELEASED) & !doorCounterIncreased) -> stopAtNearestStation = next(stopAtNearestStation));
+} 
+
+
+// Don't change door request when door is in process
+guarantee dontChangeDoorRequestWhenDoorIsInProcess:
+  G (doorStatus=IN_PROCESS -> doorReq=NIL);
+
+
+// Open door iff stopping because of stop request and door is closed
+// (stopAtNearestStation will be false after 1 cycle of open and close)
+guarantee
+G (atStation & stopAtNearestStation) & (doorStatus = CLOSED) & (!doorCounterIncreased) <-> openDoorReq;
+
+
+// Close door after open
+guarantee closeDoorAfterOpen:
+G ( (doorStatus = OPENED) <-> closeDoorReq);
+
+
+/**
+ * monitor doorOperationsCounter is counting open-close operations
+ * From 0 to 10
+ */ 
+monitor Int(0..10) doorOperationsCounter {
+  doorOperationsCounter = 0;
+  G (doorStatus != CLOSED) & (doorOperationsCounter != 10) -> (next(doorOperationsCounter) = doorOperationsCounter);
+  G ((doorStatus = CLOSED) & PREV(doorStatus = CLOSED) & (doorOperationsCounter != 10)) -> (next(doorOperationsCounter) = doorOperationsCounter);
+  G ((doorStatus = CLOSED) & PREV(doorStatus != CLOSED) & (doorOperationsCounter != 10)) -> (next(doorOperationsCounter) = (doorOperationsCounter + 1));
+  G (doorOperationsCounter = 10) -> (next (doorOperationsCounter) = 0);
+}
+
+
+
+monitor boolean techGuyInAction {
+  ! techGuyInAction;
+  G ( (doorOperationsCounter = 10 & !technicianAck) -> next(techGuyInAction));
+  G ( technicianAck -> next(!techGuyInAction));
+  G ( (!technicianAck & doorOperationsCounter != 10) -> techGuyInAction = next(techGuyInAction));
+}
+
+
+// Stop when techGuyInAction
+guarantee stopWhenTechGuyInAction:
+G (techGuyInAction -> stopping);
+
+
+// Start technical job iff entering techGuyInAction state
+guarantee
+G (PREV(!techGuyInAction) & techGuyInAction <-> startTechnicalJob );
+
+
+
+///////////////////////////////////////
+// Safety of the system
+///////////////////////////////////////
+
+
+
+///////////////////////////////////////
+// Liveness of system
+///////////////////////////////////////
+
+// Always go forward
+guarantee alwaysGoForward:
+GF forwarding;
+

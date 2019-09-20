@@ -1,0 +1,193 @@
+module Humanoid
+		env {CLEAR, BLOCKED} Obstacle ;
+		env {FWD, BWD, TURN_LEFT, TURN_RIGHT, NOT_CON} BtInput ;
+		sys {FWD, BWD, STOP, TURN_FWD, TURN_BWD, CALIB_TURN_LEFT, CALIB_TURN_RIGHT, CALIB_FWD_LEFT, CALIB_FWD_RIGHT} LeftMotor ;
+		sys {FWD, BWD, STOP, TURN_FWD, TURN_BWD, CALIB_TURN_LEFT, CALIB_TURN_RIGHT, CALIB_FWD_LEFT, CALIB_FWD_RIGHT} RightMotor ;
+		sys {FWD, BWD, STOP} HeadMotor ;
+		sys {FWD, BWD, TURN_RIGHT, TURN_LEFT} spec_nextMoveMode ;
+		sys {Q0,Q1,Q2,Q3} spec_specState ;
+		sys {T0,T1,T2,T3} spec_turnState ;
+		
+////////////////////////////////////////////////////////////////
+/*
+ * initial state
+ */
+ ////////////////////////////////////////////////////////////////
+guarantee
+	spec_specState = Q0;
+	
+guarantee
+	spec_turnState = T0;
+
+guarantee
+	spec_nextMoveMode = FWD;
+	
+assumption
+	Obstacle = CLEAR;
+	
+	
+	
+
+
+
+
+
+////////////////////////////////////////////////////////////////
+/*
+ * goals 
+ */
+ ////////////////////////////////////////////////////////////////
+guarantee
+  GF (spec_nextMoveMode=FWD);
+	
+////////////////////////////////////////////////////////////////
+
+
+
+////////////////////////////////////////////////////////////////
+/*
+ * Main Restriction - do not run into walls
+ */
+ ////////////////////////////////////////////////////////////////
+guarantee
+	G((Obstacle = BLOCKED) -> (!(spec_nextMoveMode = FWD)));
+////////////////////////////////////////////////////////////////		
+
+
+
+////////////////////////////////////////////////////////////////
+/*
+ * 						MOTORS - CONTROL
+ */
+ ////////////////////////////////////////////////////////////////		
+guarantee
+	G(((spec_nextMoveMode = BWD) & next(spec_nextMoveMode = FWD)) <-> next(LeftMotor = FWD & RightMotor = BWD));
+
+guarantee
+	G(((spec_nextMoveMode = FWD) & next(spec_nextMoveMode = BWD)) <-> next(LeftMotor = BWD & RightMotor = FWD));
+	
+guarantee //Going backward can only start from a calibrated FWD movement
+	G (next(spec_nextMoveMode = BWD) -> ((spec_nextMoveMode = FWD) | (spec_nextMoveMode = BWD)));
+	
+guarantee //From going backward it is only possible to go backwards or forwards 
+	G (spec_nextMoveMode = BWD -> next((spec_nextMoveMode = FWD) | (spec_nextMoveMode = BWD)));
+
+guarantee //Turning can start only from FWD movement
+	G (next(spec_nextMoveMode = TURN_RIGHT) -> (spec_nextMoveMode = FWD) | (spec_nextMoveMode = TURN_RIGHT));
+	
+guarantee //Turning can start only from FWD movement
+	G (next(spec_nextMoveMode = TURN_LEFT) -> (spec_nextMoveMode = FWD) | (spec_nextMoveMode = TURN_LEFT));
+ ////////////////////////////////////////////////////////////////		
+
+
+
+////////////////////////////////////////////////////////////////
+/*
+ * 							Q - AUTOMATON
+ * to prevant robot from going FWD<-->BWD indefinitely 
+ */
+////////////////////////////////////////////////////////////////
+guarantee 
+	G((spec_specState = Q0 & spec_nextMoveMode = FWD & next(spec_nextMoveMode = BWD)) -> next(spec_specState = Q1));
+	
+guarantee 
+	G((spec_specState = Q1 & spec_nextMoveMode = BWD & next(spec_nextMoveMode = FWD)) -> next(spec_specState = Q2));
+	
+guarantee
+	G(!(spec_specState = Q2 & spec_nextMoveMode = FWD & next(spec_nextMoveMode = BWD)));
+
+guarantee 
+	G((spec_specState = Q1 & next(spec_nextMoveMode = BWD)) -> next(spec_specState = Q1));
+	
+guarantee 
+	G((spec_specState = Q2 & next(spec_nextMoveMode = FWD)) -> next(spec_specState) = Q2);
+	
+guarantee
+	G((spec_nextMoveMode = TURN_RIGHT | spec_nextMoveMode = TURN_LEFT)  -> next(spec_specState = Q0));
+////////////////////////////////////////////////////////////////
+
+
+
+
+ ////////////////////////////////////////////////////////////////
+/*
+ * 					TURNNING - AUTOMATON
+ */
+ ////////////////////////////////////////////////////////////////
+guarantee
+	G (next(spec_turnState) = T0 -> (spec_turnState = T0 | spec_turnState = T3));
+	
+guarantee
+	G ((spec_turnState = T0 & !(spec_nextMoveMode = TURN_RIGHT | spec_nextMoveMode = TURN_LEFT)) -> next(spec_turnState) = T0);
+	
+guarantee
+	G (((spec_nextMoveMode = TURN_RIGHT | spec_nextMoveMode = TURN_LEFT) & Y(spec_nextMoveMode = FWD) & spec_turnState = T0) -> next(spec_turnState) = T1);
+
+guarantee
+	G (spec_turnState = T1  -> (next(spec_turnState) = T2 & (spec_nextMoveMode = TURN_RIGHT | spec_nextMoveMode = TURN_LEFT)));
+
+guarantee
+	G ((spec_turnState = T2 & (spec_nextMoveMode = TURN_RIGHT | spec_nextMoveMode = TURN_LEFT))  -> next(spec_turnState) = T1);
+	
+guarantee
+	G ((spec_turnState = T2 & spec_nextMoveMode = FWD) -> next(spec_turnState) = T3);
+	
+guarantee
+	G ((spec_turnState = T3) -> next(spec_turnState = T0));	
+////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////
+/*
+ * 						MOVEMENT - TURNNING
+ * 
+ * 
+ * Some technical limitations on the movement
+ * Starting to turn and stoping needs a calibration from FWD movement
+ */
+ ////////////////////////////////////////////////////////////////
+
+guarantee
+	G ((spec_turnState = T0 & next(spec_turnState) = T1 & spec_nextMoveMode = TURN_RIGHT) <-> (LeftMotor = CALIB_TURN_RIGHT & RightMotor = CALIB_TURN_RIGHT)); 
+
+guarantee
+	G ((spec_turnState = T0 & next(spec_turnState) = T1 & spec_nextMoveMode = TURN_LEFT) <-> (LeftMotor = CALIB_TURN_LEFT & RightMotor = CALIB_TURN_LEFT)); 
+
+
+guarantee
+	G ((next(spec_turnState) = T2) <-> (LeftMotor = FWD & RightMotor = TURN_FWD));
+	
+guarantee
+	G ((spec_turnState = T2) <-> (LeftMotor = BWD & RightMotor = TURN_BWD));
+	
+guarantee
+	G ((spec_turnState = T3 & next(spec_turnState = T0) & Y(Y(spec_nextMoveMode = TURN_RIGHT))) <-> (LeftMotor = CALIB_FWD_RIGHT & RightMotor = CALIB_FWD_RIGHT));
+		
+guarantee
+	G ((spec_turnState = T3 & next(spec_turnState = T0) & Y(Y(spec_nextMoveMode = TURN_LEFT))) <-> (LeftMotor = CALIB_FWD_LEFT & RightMotor = CALIB_FWD_LEFT));
+
+////////////////////////////////////////////////////////////////
+/*
+ * 						ENVIRONMENT - ASSUMPTIONS
+ * 
+ */
+ ////////////////////////////////////////////////////////////////
+
+assumption
+	G ((Y(spec_nextMoveMode = FWD) & Obstacle = BLOCKED) -> next(Obstacle = BLOCKED));
+
+assumption
+	G((Y(spec_nextMoveMode = BWD) & Obstacle = CLEAR) -> (next(Obstacle != BLOCKED)));
+	
+assumption
+  respondsTo((spec_turnState=T1),(Obstacle=CLEAR&next(Obstacle)=CLEAR));
+	
+assumption
+	G ((spec_turnState = T2 & Obstacle = CLEAR) -> next(Obstacle) = CLEAR);
+	
+
+pattern respondsTo(trigger, response) {
+  var boolean responded;
+  responded;
+  G (next(responded) iff (response or responded and !trigger));
+  GF (responded);
+}

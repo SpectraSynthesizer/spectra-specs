@@ -1,0 +1,58 @@
+/*
+ * Auto-generated Spectra file
+ */
+import "../patterns/DwyerPatterns.spectra"
+ 
+module ConvoyCarSpec     
+     
+env Int(0..255) sense;
+sys Int(0..4) mLeft;
+sys Int(0..4) mRight;
+
+aux boolean accelerating;
+aux boolean slowingDown;
+
+define
+  stopping := mLeft = 0 & mRight = 0;
+  turning := mLeft != mRight;
+  minDist := 20;
+  maxDist := 30;
+  inRange := (minDist < sense) & (sense < maxDist);
+  tooClose := sense <= minDist;
+  farFromNextCar := sense >= maxDist;
+guarantee notTurning:
+  G !turning;
+
+guarantee initialization:
+  stopping & !accelerating & !slowingDown;
+  
+guarantee accel:
+  G (accelerating -> (next(mLeft) - mLeft = 1 | (mLeft = 4 & next(mLeft)=4) ));
+  
+guarantee slowDwn:
+  G (slowingDown -> ((mLeft = 0 & next(mLeft)=0) | mLeft - next(mLeft) = 1 ));
+
+monitor Int(0..255) lastDist{
+  lastDist = sense;
+  G next(lastDist) = sense;
+}
+
+guarantee accelerateIfClear:
+  G farFromNextCar -> next(accelerating);
+
+guarantee
+  G ((inRange & (lastDist > sense)) -> next(slowingDown));
+
+guarantee
+  G ((inRange & (lastDist < sense)) -> next(accelerating));
+
+guarantee
+  G ((inRange & (lastDist = sense)) -> (!next(accelerating) & !next(slowingDown) ));
+  
+guarantee convoy:
+  GF (inRange | farFromNextCar | (tooClose & stopping));
+  
+guarantee
+  G (tooClose -> next(slowingDown));
+assumption initDist:
+  sense >= minDist;

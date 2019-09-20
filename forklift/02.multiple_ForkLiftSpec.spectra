@@ -1,0 +1,59 @@
+module ForkLiftSpec
+
+    env { clear, blocked } sense ;
+
+    sys { lift, drop, go, idle, turn } command ;
+    sys boolean loaded ;
+
+    
+  // safety requirements of environment
+  /////////////////////////////////////
+  
+  // stay blocked if not turning or lifting obstacle 
+  assumption
+    G ((sense = blocked & !(command = turn | command = lift)) -> next (sense = blocked));
+  
+  // block if going to next station
+  assumption
+    G (command = go -> next (sense = blocked));
+    
+  //unblock if turn or lift
+  assumption
+    G ((command = turn | command = lift) -> next (sense = clear));
+    
+  // safety of system
+  ///////////////////////////////////////
+
+  // start by idling
+  guarantee
+    command = idle & !loaded;
+    
+  guarantee
+    G (command = lift -> next(loaded));
+  guarantee  
+    G (command = drop -> next(!loaded));
+  guarantee  
+    G (!(command = drop | command = lift) -> next(loaded) = loaded);
+    
+  guarantee
+    G (loaded -> command != lift);
+  guarantee
+    G (!loaded -> command != drop);
+
+  // don't drop if not at a station (sense = clear)
+  guarantee
+    G (sense = clear -> !(command = drop | command = lift));
+
+  guarantee
+    G (sense = blocked  -> command != go);
+ 
+  // leave station after dropping
+//  LTLSPEC
+//    [] (command = drop  -> next (command) = turn);
+
+  // liveness of system
+  ///////////////////////////////////////
+
+  guarantee
+  GF (command=drop);
+  

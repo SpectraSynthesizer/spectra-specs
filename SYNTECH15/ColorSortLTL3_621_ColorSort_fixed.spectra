@@ -1,0 +1,182 @@
+module ColorSort
+		env {RED, GREEN, BLUE, BLACK, YELLOW , WHITE} color ;
+		env {RED, GREEN, BLUE, BLACK, YELLOW , WHITE} detect ;
+		env {MOVE, SLEEP} ack_ver_hor ;
+		env {MOVE, SLEEP} ack_bot ;
+		env {NOEDGE, EDGE} atEdge ;
+		env boolean color_seen ;
+		
+		
+		env {PRESS, RELEASE} haltButton;
+		
+		env {PRESS, RELEASE} speedButton;
+		sys {MOVE, SLEEP} verMot ;
+		sys {MOVE, SLEEP} horMot ;
+		sys {PLACE, RIGHT, LEFT, STOP, INITPOS} botMot ;
+		sys {RED, GREEN, BLUE, BLACK, YELLOW , WHITE} botMotColor ;
+		sys boolean store_place ;
+		
+		sys boolean spec_allsleep ;
+		
+		sys {LEVEL1, LEVEL2, LEVEL3} motSpeed;
+		
+		sys { S0, S1, S2} spec_state ;
+		
+		sys {WAIT, KICK, TOANGLEPLACE, TOANGLERIGHT, TOANGLELEFT, DROP, FROMANGLE} spec_stage ;
+		
+		sys boolean spec_speedButtonValidPressed ;
+		sys boolean spec_haltButtonValidPressed ;
+		
+		sys {pause, go} spec_pausing ;
+
+guarantee -- initial assignments: initial spec_state
+  spec_state=S0;
+
+guarantee -- the cube ALWAYS falls into the correct heap ((detect = botMotColor) = p, (ack_ver_hor = SLEEP & spec_stage = KICK & spec_pausing = go) = q, (ack_ver_hor = MOVE & spec_stage = DROP) = r)
+  G ((spec_state=S0 & ((!(ack_ver_hor = SLEEP & spec_stage = KICK & spec_pausing = go) & !(detect = botMotColor)) | ((ack_ver_hor = SLEEP & spec_stage = KICK & spec_pausing = go) & (ack_ver_hor = MOVE & spec_stage = DROP)) | (!(ack_ver_hor = MOVE & spec_stage = DROP) & (detect = botMotColor)) | (!(ack_ver_hor = SLEEP & spec_stage = KICK & spec_pausing = go) & (ack_ver_hor = MOVE & spec_stage = DROP) & (detect = botMotColor))) & next(spec_state=S0)) |
+  (spec_state=S0 & ((ack_ver_hor = SLEEP & spec_stage = KICK & spec_pausing = go) & !(ack_ver_hor = MOVE & spec_stage = DROP) & !(detect = botMotColor)) & next(spec_state=S1)) |
+  (spec_state=S1 & (!(ack_ver_hor = MOVE & spec_stage = DROP) & (detect = botMotColor)) & next(spec_state=S0)) |
+  (spec_state=S1 & (!(ack_ver_hor = MOVE & spec_stage = DROP) & !(detect = botMotColor)) & next(spec_state=S1)) |
+  (spec_state=S1 & ((ack_ver_hor = MOVE & spec_stage = DROP)) & next(spec_state=S2)) |
+  (spec_state=S2 & next(spec_state=S2)));
+
+guarantee -- equivalence of satisfaction
+  GF (spec_state=S0|spec_state=S1);
+
+guarantee
+	G (haltButton = PRESS & PREV(haltButton = RELEASE) <-> spec_haltButtonValidPressed = true);
+
+guarantee
+	G ((spec_haltButtonValidPressed = true & spec_pausing = go) | (spec_haltButtonValidPressed = false & spec_pausing = pause)
+		-> next(spec_pausing) = pause);
+	
+guarantee
+	G ((spec_haltButtonValidPressed = false & spec_pausing = go) | (spec_haltButtonValidPressed = true & spec_pausing = pause)
+		-> next(spec_pausing) = go);
+
+guarantee -- no pause is eternal
+  respondsTo(spec_haltButtonValidPressed=true&spec_pausing=go,(spec_haltButtonValidPressed=true));
+	
+guarantee -- if we pause, this means no motors move and all the rest of the stats remain the same
+	G (spec_pausing = pause | ack_ver_hor = MOVE -> 
+		spec_allsleep = true & next(spec_stage) = spec_stage);
+	
+guarantee --aside from the WAIT stage, botMotColor never changes
+	G (spec_stage != WAIT -> next(botMotColor) = botMotColor);
+
+guarantee -- only one motors moves at a time
+	G (verMot = MOVE -> (botMot = STOP & horMot = SLEEP));
+	
+guarantee 
+	G (horMot = MOVE -> (botMot = STOP & verMot = SLEEP));
+	
+guarantee 
+	G (botMot != STOP -> (verMot = SLEEP & horMot = SLEEP));
+	
+guarantee -- spec_allsleep is true iff all motors sleep
+	G (spec_allsleep = true <-> verMot = SLEEP  & horMot = SLEEP & botMot = STOP);
+	
+guarantee -- motors are asleep at the start
+	store_place = false & motSpeed = LEVEL1 & spec_stage = WAIT & spec_pausing = go;
+	
+-- THIS IS HOW THE ROBOT WORKS WHEN NOT PAUSED
+
+-- prior to heap search
+
+guarantee -- if there is no cube and we are not currently moving a cube, all motors sleep
+	G (color = BLACK & spec_stage = WAIT -> 
+		spec_allsleep = true & next(spec_stage) = WAIT);
+
+guarantee -- once seeing a cube, verMot kicks it in
+	G (color != BLACK & spec_stage = WAIT  & spec_pausing = go  ->
+		verMot = MOVE  & color = next(botMotColor) & next(spec_stage) = KICK);
+
+guarantee -- after the cube has been kicked in, move to the right angle
+	G (ack_ver_hor = SLEEP & spec_stage = KICK  & spec_pausing = go & color_seen = false  ->
+		(color_seen = false -> botMot = RIGHT & next(spec_stage) = TOANGLERIGHT) & (color_seen = true -> botMot = PLACE & next(spec_stage) = TOANGLERIGHT));
+
+-- placement in case the heap's location is already known
+		
+guarantee
+	G (ack_bot = MOVE & spec_stage = TOANGLEPLACE & spec_pausing = go ->
+		botMot = PLACE & next(spec_stage) = TOANGLERIGHT);
+		
+guarantee
+	G (ack_bot = SLEEP & spec_stage = TOANGLEPLACE & spec_pausing = go ->
+		horMot = MOVE & next(spec_stage) = DROP);
+
+-- heap search
+ 
+guarantee -- while the bottom motor is moving, see if the color has been found [botMot is MOVING and the color has NOT been found; we're GOING]
+	G (atEdge != EDGE & spec_stage = TOANGLERIGHT & detect != botMotColor & spec_pausing = go  ->
+		botMot = RIGHT & next(spec_stage) = TOANGLERIGHT);
+
+guarantee -- while the bottom motor is moving, see if the color has been found [botMot STOPPED MOVING and the color has NOT been found; we're GOING]
+	G (atEdge = EDGE & spec_stage = TOANGLERIGHT & spec_pausing = go  & detect != botMotColor ->
+		botMot = LEFT & next(spec_stage) = TOANGLELEFT);
+ 
+guarantee -- while the bottom motor is moving, see if the color has been found [botMot is MOVING and the color has NOT been found; we're GOING]
+	G (spec_stage = TOANGLELEFT & spec_pausing = go  & detect != botMotColor ->
+		botMot = LEFT & next(spec_stage) = TOANGLELEFT);
+
+guarantee -- after moving to the right angle, move the cube into the heap [we're GOING]
+	G ((spec_stage = TOANGLERIGHT | spec_stage = TOANGLELEFT) & spec_pausing = go & detect = botMotColor ->
+		horMot = MOVE & next(spec_stage) = DROP);
+		
+guarantee
+	G (store_place = true <-> (spec_stage = TOANGLERIGHT | spec_stage = TOANGLELEFT) & spec_pausing = go & detect = botMotColor);
+
+-- return to initial position
+	 
+guarantee -- after the cube has been dropped into the heap, return to original position. Wait for the motor to finish returning before doing anything else
+	G (((ack_ver_hor = SLEEP & spec_stage = DROP) | ((ack_bot = MOVE | (ack_bot = SLEEP & PREV(spec_pausing = pause))) & spec_stage = FROMANGLE)) & spec_pausing = go ->
+		botMot = INITPOS & next(spec_stage) = FROMANGLE);
+
+guarantee -- after the bottom motor finished moving, return to starting stage
+	G (ack_bot = SLEEP & PREV(spec_pausing = go) & spec_stage = FROMANGLE & spec_pausing = go -> 
+		spec_allsleep & next(spec_stage) = WAIT);
+
+-- speed button
+
+guarantee
+	G (speedButton = PRESS & PREV(speedButton = RELEASE) <-> spec_speedButtonValidPressed = true);
+
+
+guarantee -- if the speed button is pressed, increase the speed by one level
+	G (spec_speedButtonValidPressed = true & PREV(motSpeed = LEVEL1) -> motSpeed = LEVEL2);
+	
+guarantee -- if the speed button is pressed, increase the speed by one level
+	G (spec_speedButtonValidPressed = true & PREV(motSpeed = LEVEL2) -> motSpeed = LEVEL3);
+	
+guarantee -- if the speed button is pressed, increase the speed by one level
+	G (spec_speedButtonValidPressed = true & PREV(motSpeed = LEVEL3) -> motSpeed = LEVEL1);
+	 
+	 
+guarantee -- if the speed button is released, the speed remains the same
+	G (spec_speedButtonValidPressed = false & PREV(motSpeed = LEVEL1) -> motSpeed = LEVEL1);
+	
+guarantee -- if the speed button is pressed, increase the speed by one level
+	G (spec_speedButtonValidPressed = false & PREV(motSpeed = LEVEL2) -> motSpeed = LEVEL2);
+	
+guarantee -- if the speed button is pressed, increase the speed by one level
+	G (spec_speedButtonValidPressed = false & PREV(motSpeed = LEVEL3) -> motSpeed = LEVEL3);
+
+-- Some environment specifications
+
+assumption -- after starting to move, we will sleep eventually
+  respondsTo(ack_ver_hor=MOVE,(ack_ver_hor=SLEEP));
+assumption
+  respondsTo(ack_bot=MOVE,(ack_bot=SLEEP));
+
+assumption
+	G (spec_stage != KICK & spec_stage != DROP -> ack_ver_hor = SLEEP);
+
+assumption -- there will always be a cube
+  GF (color!=BLACK);
+
+pattern respondsTo(trigger, response) {
+  var boolean responded;
+  responded;
+  G (next(responded) iff (response or responded and !trigger));
+  GF (responded);
+}

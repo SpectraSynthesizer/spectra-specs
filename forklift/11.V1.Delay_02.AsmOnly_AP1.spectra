@@ -1,0 +1,60 @@
+module AP1
+
+    env boolean station ;
+    env boolean lowObstacle ;
+
+    sys { GO, STOP } move ;
+  
+  assumption 
+    G (lowObstacle -> !station);
+  assumption
+  respondsTo(lowObstacle,!lowObstacle);
+  assumption
+  respondsTo(move=GO,(move=STOP|station));
+    
+  guarantee
+    G (lowObstacle -> move=STOP);
+
+  //G4
+  guarantee
+  GF (station);
+  
+--  ASSUMPTION -- at most blocked twice
+--  After (!atStation) have at most two 
+--    (obstacle=CLOSE) until (atStation);      --P15
+
+  sys { S0, S1, S2, S3, S4, S5, S6} spec_stateAP1 ;
+
+guarantee -- initial assignments: initial spec_stateAP1
+  spec_stateAP1=S0;
+
+guarantee -- safety this and next spec_stateAP1
+  G ((spec_stateAP1=S0 & ((!(!station) & !station) | (station)) & next(spec_stateAP1=S0)) |
+  (spec_stateAP1=S0 & ((!station) & !lowObstacle & !station) & next(spec_stateAP1=S1)) |
+  (spec_stateAP1=S0 & ((!station) & lowObstacle & !station) & next(spec_stateAP1=S4)) |
+  (spec_stateAP1=S1 & (station) & next(spec_stateAP1=S0)) |
+  (spec_stateAP1=S1 & (!lowObstacle & !station) & next(spec_stateAP1=S1)) |
+  (spec_stateAP1=S1 & (lowObstacle & !station) & next(spec_stateAP1=S4)) |
+  (spec_stateAP1=S2 & next(spec_stateAP1=S2)) |
+  (spec_stateAP1=S3 & (station) & next(spec_stateAP1=S0)) |
+  (spec_stateAP1=S3 & (lowObstacle & !station) & next(spec_stateAP1=S2)) |
+  (spec_stateAP1=S3 & (!lowObstacle & !station) & next(spec_stateAP1=S3)) |
+  (spec_stateAP1=S4 & (station) & next(spec_stateAP1=S0)) |
+  (spec_stateAP1=S4 & (lowObstacle & !station) & next(spec_stateAP1=S4)) |
+  (spec_stateAP1=S4 & (!lowObstacle & !station) & next(spec_stateAP1=S5)) |
+  (spec_stateAP1=S5 & (station) & next(spec_stateAP1=S0)) |
+  (spec_stateAP1=S5 & (!lowObstacle & !station) & next(spec_stateAP1=S5)) |
+  (spec_stateAP1=S5 & (lowObstacle & !station) & next(spec_stateAP1=S6)) |
+  (spec_stateAP1=S6 & (station) & next(spec_stateAP1=S0)) |
+  (spec_stateAP1=S6 & (!lowObstacle & !station) & next(spec_stateAP1=S3)) |
+  (spec_stateAP1=S6 & (lowObstacle & !station) & next(spec_stateAP1=S6)));
+
+assumption -- equivalence of satisfaction
+  GF (spec_stateAP1=S0|spec_stateAP1=S1|spec_stateAP1=S3|spec_stateAP1=S4|spec_stateAP1=S5|spec_stateAP1=S6);
+
+pattern respondsTo(trigger, response) {
+  var boolean responded;
+  responded;
+  G (next(responded) iff (response or responded and !trigger));
+  GF (responded);
+}

@@ -1,0 +1,181 @@
+//last edit on Dec 28 2016, 02:18 by Ori. Only // remarks we added
+// and two gar names were changed (at the end)
+import "../patterns/DwyerPatterns.spectra"
+
+module Elevator
+
+
+type TouchSensorCont={ON,OFF};
+type DoorMotorCont={CLOSE,STOP,OPEN};
+type LiftMotorCont={UP,STOP,DOWN};
+type LampCont={ON,OFF};
+type Velocity={ZERO,SLOW,FAST};
+
+//env TouchSensorCont upperTS_c;
+//env TouchSensorCont lowerTS_c;
+env Int(0..21) current_time_c; //why 21?
+
+
+env boolean[4] calls_c; // what calls_c refers to? name isn't clear
+
+
+sys LiftMotorCont liftM_c;
+sys DoorMotorCont doorM_c;
+sys LampCont lamp_c;
+
+// general remark: I think we can remove the '_c' extension to every name :)
+// the shorter the better
+
+//aux Int(0..21) sampled_time;
+aux boolean[4] memCalls;
+aux Int(0..3) currentFloor;
+
+define
+  goingUp             := (liftM_c=UP);
+  goingDown           := (liftM_c=DOWN);
+  moving              := (goingUp|goingDown);
+  stayingSameHeigt    := !moving;  //the name better be changed to 'standStill'
+                                   // or 'notMoving'
+  openningDoors       := (doorM_c=OPEN);
+  closingDoors        := (doorM_c=CLOSE);
+  keepDoorsState      := (doorM_c=STOP);
+  lightIsOn           := (lamp_c=ON);
+  floor0              := (aboveTheGround=0);
+  floor1              := (aboveTheGround=5);
+  floor2              := (aboveTheGround=10); 
+  floor3              := (aboveTheGround=15);
+  atFloor             := (floor0|floor1|floor2|floor3); 
+  atFloorThatCalled   := (floor0&memCalls[0])|(floor1&memCalls[1])|(floor2&memCalls[2])|(floor3&memCalls[3]);
+  doorsAreFullyOpened := (distanceBetweenDoors=15);
+  doorsAreClosed      := (distanceBetweenDoors=0); 
+  anyCalls            := (memCalls[0]|memCalls[1]|memCalls[2]|memCalls[3]);
+
+
+predicate changeMonitorByOperation(boolean cond,Int(0..15) m,Int(0..2) d):
+  cond<->(next(m)=m+(d-1));
+
+//predicate removeCallWhenArrived(boolean condFloor,boolean[4] calls,Int(0..3) floorNum):
+   //condFloor->(!);
+
+predicate xImpNextY(boolean cond1,boolean cond2):
+  cond1->next(cond2);
+
+//predicate boolArrayAti(boolean[4] arr,Int(0..3) i):
+  //((i=0)&arr[0]=true)|((i=1)&arr[1]=true)|((i=2)&arr[2]=true)|((i=3)&arr[3]=true);
+
+monitor Int(0..15) aboveTheGround
+{
+  (aboveTheGround=0);
+  G changeMonitorByOperation(goingUp,aboveTheGround,2);
+  G changeMonitorByOperation(goingDown,aboveTheGround,0);
+  G changeMonitorByOperation(stayingSameHeigt,aboveTheGround,1);
+}
+
+monitor Int(0..15) distanceBetweenDoors
+{
+  (distanceBetweenDoors=0);
+  G changeMonitorByOperation(openningDoors,distanceBetweenDoors,2);
+  G changeMonitorByOperation(closingDoors,distanceBetweenDoors,0);
+  G changeMonitorByOperation(keepDoorsState,distanceBetweenDoors,1);
+}
+
+monitor Int(0..21) sampledTime
+{
+  (sampledTime=0);
+  G ((!anyCalls) & PREV(anyCalls))->(next(sampledTime)=current_time_c);
+  // what if (anyCalls) & PREV(anyCalls))
+  
+}
+
+
+gar init_motors:
+  (stayingSameHeigt)&(keepDoorsState)&(!lightIsOn)&(!anyCalls);
+    
+
+gar setCurrentFloorVar:
+  G((floor0->(currentFloor=0))&
+    (floor1->(currentFloor=1))&
+    (floor2->(currentFloor=2))&
+    (floor3->(currentFloor=3))); // general comment about this gar,
+    // why not just make a monitor which updates currentFloor to be
+    // aboveTheGround/5, it'd look nicer than 4 different lines
+  
+  
+gar doorsAreClosedWhileMoving:
+  G(moving -> (doorsAreClosed&keepDoorsState));
+
+
+gar ifFloor0DontGoDown:
+  G(floor0->!(goingDown));
+  
+gar ifFloor3DontGoUp:
+  G(floor3->!(goingUp));
+  
+gar lightBlinksWhileMoving:
+  G(moving->(next(lightIsOn)!=lightIsOn));
+
+gar lightIsOffWhileNotMoving:
+  G((!moving)->(!next(lightIsOn))); // you did not use your own define 'stayingSameHeigt'
+  // indeed I think it's unnecessary and we can remove 'stayingSameHeigt'
+
+gar ifCallsFromFloor0GoTo0:
+  pRespondsToS(calls_c[0],floor0); // ahm............. it can do TONS of going
+  // up and downs prior getting to floor 0, not so good as it may not guarantee
+  // the 'queue order', normal elevator gives priority to the person how clicked
+  // first in the queue. Maybe we should NOT let it go UP, during its journey to
+  // floor 0. What do you think?
+  // Obviously this is a private scenario of a general decision which we should
+  // make.
+
+//gar ifCallsFromFloor1GoTo1:
+ // pRespondsToS(calls_c[1],floor1);
+  
+//gar ifCallsFromFloor2GoTo2:
+  //pRespondsToS(calls[2],floor2);
+  
+//gar ifCallsFromFloor3GoTo3:
+  //pRespondsToS(calls[3],floor3);
+
+gar dontChangeDirectionWithoutStopping:
+  //G(xImpNextY(goingUp,!goingDown)&xImpNextY(goingDown,!goingUp));
+  G((goingUp->next(!goingDown))&(goingDown->next(!goingUp)));
+
+
+gar rememberCalls:
+  G(xImpNextY(calls_c[0],memCalls[0])&
+    xImpNextY(calls_c[1],memCalls[1])&
+    xImpNextY(calls_c[2],memCalls[2])&
+    xImpNextY(calls_c[3],memCalls[3]));
+    /*G((calls_c[0]->next(memCalls[0]))&
+      (calls_c[1]->next(memCalls[1]))&
+      (calls_c[2]->next(memCalls[2]))&
+      (calls_c[3]->next(memCalls[3])));*/
+    
+// what if calls_c[0]==false, do we guarantee that memCalls[0]==false also?
+
+
+gar ifMovingDontStopTillDesignatedFloorHasBeenVisited:
+  G(moving->next((stayingSameHeigt)<->(atFloorThatCalled|floor3|floor0)));
+// this gar may be correct BUT we better check this as I'm not 100% sure.
+  
+  
+//gar
+  //G(atFloorThatCalled->(!moving));
+  
+  
+gar ifArriveToDesignatedFloorRemoveCall:
+    G(((floor0&!calls_c[0])->next(!memCalls[0]))&
+      ((floor1&!calls_c[1])->next(!memCalls[1]))&
+      ((floor2&!calls_c[2])->next(!memCalls[2]))&
+      ((floor3&!calls_c[3])->next(!memCalls[3])));
+      
+//gar stopFor20SecIfNoCalls:
+    //G((!anyCalls)&(current_time_c-sampledTime<20)->(!moving));
+    
+//gar infinitelyOftenAtFloor1:
+  //GF floor1;
+  
+  
+//asm
+ // G !(calls_c[2]|calls_c[1]|calls_c[0]);
+    

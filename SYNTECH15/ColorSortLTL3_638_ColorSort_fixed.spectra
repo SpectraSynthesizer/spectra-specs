@@ -1,0 +1,139 @@
+module ColorSort
+		env {RED, GREEN, BLUE, BLACK, YELLOW , WHITE} color ;
+		env {RED, GREEN, BLUE, BLACK, YELLOW , WHITE} detect ;
+		env {MOVE, SLEEP} ack_ver ;
+		env {MOVE, SLEEP} ack_hor ;
+		env {MOVE, SLEEP} ack_bot ;
+		
+		env {PRESS, RELEASE} speedButton;
+		sys {MOVE, SLEEP} verMot ;
+		sys {MOVE, SLEEP} horMot ;
+		sys {SEEK, STOP, RETURN} botMot ;
+		
+		sys {LEVEL1, LEVEL2, LEVEL3} motSpeed;
+		
+		sys {RED, GREEN, BLUE, BLACK, YELLOW , WHITE} spec_currentColor;
+		sys { S0, S1, S2} spec_state_1 ;
+		sys { S0, S1, S2} spec_state_2 ;
+		
+		sys boolean spec_speedButtonValidPressed ;
+		
+		
+define -- spec_allsleep is true iff all motors sleep
+	spec_allsleep := verMot = SLEEP  & horMot = SLEEP & botMot = STOP;
+define -- spec_nonemove is true iff no motor moves
+	spec_nonemove := ack_ver = SLEEP & ack_hor = SLEEP & ack_bot = SLEEP;
+
+guarantee -- only one motors moves at a time
+	G (verMot = MOVE -> (botMot = STOP & horMot = SLEEP));
+	
+guarantee 
+	G (horMot = MOVE -> (botMot = STOP & verMot = SLEEP));
+	
+guarantee 
+	G (botMot != STOP -> (verMot = SLEEP & horMot = SLEEP));
+	
+guarantee
+	G (verMot = SLEEP -> spec_currentColor = next(spec_currentColor));
+	
+guarantee -- motors are asleep at the start
+	motSpeed = LEVEL1;
+	
+-- this is how the robot works. MAY GOD HELP US ALL
+
+guarantee
+	G (color = BLACK & spec_nonemove & spec_allsleep -> spec_allsleep);
+/*	
+LTLSPEC
+	G (color != BLACK & spec_nonemove & spec_allsleep -> verMot = MOVE & next(spec_currentColor) = color);
+	 
+LTLSPEC -- initial assignments: initial spec_state_1
+  spec_state_1=S0;
+
+LTLSPEC -- safety this and next spec_state_1
+  G ((spec_state_1=S0 & ((!(verMot = MOVE) & !(ack_ver = SLEEP -> botMot = SEEK)) | ((verMot = MOVE) & (detect = spec_currentColor)) | (!(detect = spec_currentColor) & (ack_ver = SLEEP -> botMot = SEEK)) | (!(verMot = MOVE) & (detect = spec_currentColor) & (ack_ver = SLEEP -> botMot = SEEK))) & next(spec_state_1=S0)) |
+  (spec_state_1=S0 & ((verMot = MOVE) & !(detect = spec_currentColor) & !(ack_ver = SLEEP -> botMot = SEEK)) & next(spec_state_1=S2)) |
+  (spec_state_1=S1 & TRUE & next(spec_state_1=S1)) |
+  (spec_state_1=S2 & (!(detect = spec_currentColor) & (ack_ver = SLEEP -> botMot = SEEK)) & next(spec_state_1=S0)) |
+  (spec_state_1=S2 & ((detect = spec_currentColor)) & next(spec_state_1=S1)) |
+  (spec_state_1=S2 & (!(detect = spec_currentColor) & !(ack_ver = SLEEP -> botMot = SEEK)) & next(spec_state_1=S2)));
+
+LTLSPECENV -- equivalence of satisfaction
+  (G F (spec_state_1=S0));
+	
+LTLSPEC
+	G (detect = spec_currentColor & PREV(botMot) = SEEK -> horMot = MOVE);
+	
+LTLSPEC -- initial assignments: initial spec_state_2
+  spec_state_2=S0;
+
+LTLSPEC -- safety this and next spec_state_2
+  G ((spec_state_2=S0 & ((!(horMot = MOVE) & !(ack_hor = SLEEP -> botMot = RETURN)) | ((horMot = MOVE) & (ack_bot = SLEEP)) | (!(ack_bot = SLEEP) & (ack_hor = SLEEP -> botMot = RETURN)) | (!(horMot = MOVE) & (ack_bot = SLEEP) & (ack_hor = SLEEP -> botMot = RETURN))) & next(spec_state_2=S0)) |
+  (spec_state_2=S0 & ((horMot = MOVE) & !(ack_bot = SLEEP) & !(ack_hor = SLEEP -> botMot = RETURN)) & next(spec_state_2=S2)) |
+  (spec_state_2=S1 & TRUE & next(spec_state_2=S1)) |
+  (spec_state_2=S2 & (!(ack_bot = SLEEP) & (ack_hor = SLEEP -> botMot = RETURN)) & next(spec_state_2=S0)) |
+  (spec_state_2=S2 & ((ack_bot = SLEEP)) & next(spec_state_2=S1)) |
+  (spec_state_2=S2 & (!(ack_bot = SLEEP) & !(ack_hor = SLEEP -> botMot = RETURN)) & next(spec_state_2=S2)));
+
+LTLSPECENV -- equivalence of satisfaction
+  (G F (spec_state_2=S0));
+  
+ 	
+LTLSPEC
+	G ((ack_hor = SLEEP & PREV(ack_hor) = MOVE) | (PREV(botMot) = RETURN & PREV(ack_bot) = MOVE) -> botMot = RETURN);
+
+LTLSPEC
+	G (PREV(botMot) = RETURN & PREV(ack_bot) = SLEEP -> spec_allsleep);
+*/
+-- speed button
+
+guarantee
+	G (speedButton = PRESS & PREV(speedButton = RELEASE) <-> spec_speedButtonValidPressed);
+
+
+guarantee -- if the speed button is pressed, increase the speed by one level
+	G (spec_speedButtonValidPressed & PREV(motSpeed = LEVEL1) -> motSpeed = LEVEL2);
+	
+guarantee -- if the speed button is pressed, increase the speed by one level
+	G (spec_speedButtonValidPressed & PREV(motSpeed = LEVEL2) -> motSpeed = LEVEL3);
+	
+guarantee -- if the speed button is pressed, increase the speed by one level
+	G (spec_speedButtonValidPressed & PREV(motSpeed = LEVEL3) -> motSpeed = LEVEL1);
+	 
+	 
+guarantee -- if the speed button is released, the speed remains the same
+	G (!spec_speedButtonValidPressed & PREV(motSpeed = LEVEL1) -> motSpeed = LEVEL1);
+	
+guarantee -- if the speed button is pressed, increase the speed by one level
+	G (!spec_speedButtonValidPressed & PREV(motSpeed = LEVEL2) -> motSpeed = LEVEL2);
+	
+guarantee -- if the speed button is pressed, increase the speed by one level
+	G (!spec_speedButtonValidPressed & PREV(motSpeed = LEVEL3) -> motSpeed = LEVEL3);
+
+
+-- an interesting guarantee
+
+guarantee
+  respondsTo(color!=BLACK,(detect=spec_currentColor&horMot=MOVE));
+
+guarantee
+  GF (horMot=MOVE);
+
+-- Some environment specifications
+
+assumption -- after starting to move, we will sleep eventually
+  respondsTo(ack_ver=MOVE,(ack_ver=SLEEP));
+assumption -- after starting to move, we will sleep eventually
+  respondsTo(ack_hor=MOVE,(ack_hor=SLEEP));
+assumption -- after starting to move, we will sleep eventually
+  respondsTo(ack_bot=MOVE,(ack_bot=SLEEP));
+
+assumption -- there will always be a cube
+  GF (color!=BLACK);
+
+pattern respondsTo(trigger, response) {
+  var boolean responded;
+  responded;
+  G (next(responded) iff (response or responded and !trigger));
+  GF (responded);
+}

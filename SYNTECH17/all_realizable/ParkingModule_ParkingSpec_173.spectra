@@ -1,0 +1,104 @@
+import "../patterns/DwyerPatterns.spectra"
+module ParkingSpec      
+
+env Int(0..5) frontSense;
+env Int(0..5) sideSense;
+env Status status; 
+env SideStatus sideStatus;
+env ColorCmd color;
+
+sys MotorCmd driveMotor;
+sys SenseMotorCmd senseMotor; 
+sys MotorCmd steeringMotor;
+sys Int(0..5) velocity;
+sys Mode mode;
+
+ 
+type SenseMotorCmd = {SIDE, BACK};
+type MotorCmd = {FWD, STOP, BWD, HARD_LEFT, LIGHT_LEFT, STRAIGHT, LIGHT_RIGHT, HARD_RIGHT};
+type Mode = {SEARCHING, SCANNING, PARKING, PARKED};
+type Status = {PARALLEL, REVERSE, NONE};
+type SideStatus = {MIN_PARALLEL , MIN_REVERSE, NONE};
+type ColorCmd = {BLACK , GREEN , BLUE};
+
+define
+  valid_parking_spot := (status != NONE) & (color = GREEN);
+  stopping := driveMotor = STOP & velocity = 0;
+  forwarding := driveMotor = FWD; 
+  reversing := driveMotor = BWD ;
+  left := steeringMotor = LIGHT_LEFT | steeringMotor = HARD_LEFT;
+  right := steeringMotor = LIGHT_RIGHT | steeringMotor = HARD_RIGHT;
+  light_left_fwd := steeringMotor = LIGHT_LEFT & driveMotor = FWD;
+  light_left_bwd := steeringMotor = LIGHT_LEFT & driveMotor = BWD;
+  hard_left_fwd := steeringMotor = HARD_LEFT & driveMotor = FWD;
+  hard_left_bwd := steeringMotor = HARD_LEFT & driveMotor = BWD;
+  light_right_fwd := steeringMotor = LIGHT_RIGHT & driveMotor = FWD;
+  light_right_bwd := steeringMotor = LIGHT_RIGHT & driveMotor = BWD;
+  hard_right_fwd := steeringMotor = HARD_RIGHT & driveMotor = FWD;
+  hard_right_bwd := steeringMotor = HARD_RIGHT & driveMotor = BWD;
+  getCloser := (PREV(sideSense = 5) & (sideSense < 5)) | (PREV(sideSense = 4) & (sideSense < 4)) | (PREV(sideSense = 3) & (sideSense < 3)) | (PREV(sideSense = 2) & (sideSense < 2)) | (PREV(sideSense = 1) & (sideSense < 1));
+  sideways := light_left_fwd | light_left_bwd | hard_left_fwd | hard_left_bwd | light_right_fwd | light_right_bwd | hard_right_fwd | hard_right_bwd;
+  fwd_turning := (steeringMotor = HARD_LEFT | steeringMotor = HARD_RIGHT | steeringMotor = LIGHT_LEFT | steeringMotor = LIGHT_RIGHT) & forwarding;
+  bwd_turning := (steeringMotor = HARD_LEFT | steeringMotor = HARD_RIGHT | steeringMotor = LIGHT_LEFT | steeringMotor = LIGHT_RIGHT) & reversing;
+
+//Guarantees
+//Initially we are not parked but starting a parking
+gar 
+mode = PARKING & driveMotor = STOP & steeringMotor = STRAIGHT;
+
+gar
+G steeringMotor != FWD & steeringMotor != BWD & steeringMotor != STOP;
+
+gar
+G driveMotor != HARD_LEFT & driveMotor != LIGHT_LEFT & driveMotor != STRAIGHT & driveMotor != LIGHT_RIGHT & driveMotor != HARD_RIGHT;
+
+gar
+G (mode = PARKING) <-> (velocity = 1);
+
+gar
+G mode = PARKING -> next(mode = PARKING | mode = PARKED);
+
+//Enter the parking spot eventually
+gar 
+GF (mode = PARKED);
+
+//define what mode = parked means
+//gar
+//G (mode = PARKED) <-> (valid_parking_spot = true);
+gar
+G(valid_parking_spot <-> next(mode = PARKED));
+
+gar
+G(mode = PARKED -> stopping);
+
+guarantee dontCrashSide:
+G (PREV(sideSense <= 1)) -> (!right);
+
+//// beware when entering a parking spot or just going backwards
+//gar
+//G(driveMotor = BWD) -> ((PREV(senseMotor = SIDE)) & 
+//  (PREV(backSense > 0 & stopping) & PREV(PREV(senseMotor = BACK))));
+
+//Assumptions
+
+//For testing purposes, we assume we found a parallel parking spot and we are above a the road which means the color sensor returns black
+asm 
+(status = PARALLEL)  & (color !=GREEN);
+
+//By driving backwards and to the right, eventauly we will get a new color.
+asm
+pRespondsToS((reversing) & (right), (color != BLACK) | !((reversing) & (right))); //Take 1
+//GF ((reversing) & (right)) -> (color != BLACK); //Take 2
+
+//Assume that there is a green parking spot
+asm 
+GF valid_parking_spot;
+
+//Once a parking spot has been found it wont move. Hopefully.
+asm
+G (status = PARALLEL) -> (next(status) = PARALLEL);
+
+asm
+G (status = REVERSE) -> (next(status) = REVERSE);
+
+ 

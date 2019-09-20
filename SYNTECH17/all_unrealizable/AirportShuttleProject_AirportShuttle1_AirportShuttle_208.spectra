@@ -1,0 +1,248 @@
+import "../patterns/DwyerPatterns.spectra"
+
+module AirportShuttle
+
+env Int(0..3) station;
+env boolean atStation;
+env Button emgButton;
+//env boolean readyToEmgBeep;
+
+env boolean pressedStationZero;
+env boolean pressedStationOne;
+env boolean pressedStationTwo;
+env boolean pressedStationThree;
+
+sys MotorCmd motors;
+//sys boolean emgBeepReq;
+
+type Button = {PRESSED, RELEASED};
+type MotorCmd = {FWD, STOP, BWD};
+
+predicate atGivenStation(Int(0..3) index):
+  atStation & station=index;
+
+
+define 
+  stopping := motors = STOP;
+  forwarding := motors = FWD;
+  backwarding := motors = BWD;
+  
+  willEnterStation := !atStation & next(atStation);
+  
+  noTasks := !taskAtStationZero & !taskAtStationOne & !taskAtStationTwo & !taskAtStationThree;
+  
+  noPressedStations := !pressedStationZero & !pressedStationOne & !pressedStationTwo & !pressedStationThree;
+  
+  atStationWithTask := atStation & ((station = 0 & taskAtStationZero) |
+                                    (station = 1 & taskAtStationOne) |
+                                    (station = 2 & taskAtStationTwo) |
+                                    (station = 3 & taskAtStationThree));  
+
+  stationWillIncrease := next(station) = station+1;
+  stationWillDecrease := next(station) = station-1;
+                                  
+  noTasksForward := ((atGivenStation(0) & (!taskAtStationOne & !taskAtStationTwo & !taskAtStationThree)) |
+                    (atGivenStation(1) &  (!taskAtStationTwo & !taskAtStationThree)) |
+                    (atGivenStation(2) &  (!taskAtStationThree)));
+  
+  noTasksBackward := ((atGivenStation(3) & (!taskAtStationTwo & !taskAtStationOne & !taskAtStationZero)) | 
+                     (atGivenStation(2) &  (!taskAtStationOne & !taskAtStationZero)) |
+                     (atGivenStation(1) &  (!taskAtStationZero)));
+                                        
+///////////////////////////////////////
+// Environment Specification
+/////////////////////////////////////
+
+assumption initialStateEnv:
+ station = 0 & atStation & noPressedStations & emgButton = RELEASED;
+
+// Forwarding cause station increase 
+assumption forwardingCauseStationIncrease:
+  pRespondsToS(forwarding &  !atGivenStation(3), stationWillIncrease | !forwarding);
+
+// Backwarding cause station decrease   
+assumption backwardingCauseStationDecrease:
+  pRespondsToS(backwarding & !atGivenStation(0), stationWillDecrease | !backwarding);
+
+// Station number can only change when entering station
+assumption 
+  G !willEnterStation -> next(station) = station;
+
+// Station can only increase by going forwarding (and entering station)
+assumption
+  G willEnterStation & forwarding -> stationWillIncrease;
+
+// Station can only decrease by going backwarding (and entering station)
+assumption
+  G willEnterStation & backwarding -> stationWillDecrease; 
+
+// Stations can only increase or decrease by one 
+assumption
+  G (next(station)= station) | (next(station)= station +1) | (next(station)= station-1); 
+
+// Station can't change while stopping
+assumption stationDoesNotChangeWhenStopping:
+  G  (stopping -> ((atStation = next(atStation)) & (station = next(station))));
+ 
+// Current station not pressed while at station 
+assumption currentStationNotPressedWhileAtStation:
+  G (next(atGivenStation(0)) -> next(!pressedStationZero)) &
+    (next(atGivenStation(1)) -> next(!pressedStationOne)) &
+    (next(atGivenStation(2)) -> next(!pressedStationTwo)) &
+    (next(atGivenStation(3)) -> next(!pressedStationThree));
+
+// Not always stop at nearest station
+assumption notAlwaysAtEmgState:
+GF !atEmgState; 
+
+
+///////////////////////////////////////
+// System Specification
+///////////////////////////////////////
+    
+// Initial state 
+guarantee initialState:
+  stopping;
+
+
+/**
+ * monitor atEmgState is true when emgButton is pressed 
+ * until it is pressed again
+ */
+monitor boolean atEmgState {
+  // Initially not atEmgState
+  !atEmgState;
+  // Change value of atEmgState at each press on emgButton
+  G ((emgButton = PRESSED) <-> next(atEmgState)=!atEmgState);
+} 
+
+guarantee
+  G atStation & atEmgState -> stopping;
+
+// When passing station and this station was called stop at station.
+guarantee
+  G atStationWithTask -> stopping;
+
+///////////////////////////////////////
+// Safety of the system
+///////////////////////////////////////
+  
+// Can't driving backward in the first station 
+guarantee
+  G atGivenStation(0) -> !backwarding;
+
+// Can't driving forward in the last station  
+guarantee
+  G atGivenStation(3) -> !forwarding;
+
+// If no tasks stop when entering station
+guarantee
+  G noTasks & atStation -> stopping;
+  
+// Preventing unnecessary driving forward
+guarantee
+  G noTasksForward -> !forwarding;  
+
+// Preventing unnecessary driving backward
+guarantee
+  G noTasksBackward -> !backwarding; 
+
+// Prevent unnecessary stopping  
+guarantee
+  G (atStation & !atStationWithTask & !noTasks & !UturnAllowed) -> !stopping; 
+
+// Don't stop while not at station
+guarantee
+G !atStation -> !stopping;
+
+// Don't change direction without stopping  
+guarantee
+  G (!stopping -> (next(motors) = motors | next(stopping)));
+
+
+monitor boolean UturnAllowed {
+  // Initial Uturn is not allowed
+  !UturnAllowed;
+  // Uturn allowed if entering station while driving forward and no tasks forward
+  G willEnterStation & forwarding & next(noTasksForward) -> next(UturnAllowed);
+  // Uturn allowed if entering station while driving backward and no tasks backward
+  G willEnterStation & backwarding & next(noTasksBackward) -> next(UturnAllowed);
+  // else
+  G !willEnterStation | !(forwarding & next(noTasksForward)) | !(backwarding & next(noTasksBackward)) -> next(!UturnAllowed);
+}
+
+
+///////////////////////////////////////
+// Liveness of system
+///////////////////////////////////////
+
+// All Tasks Are Satisfied Eventually:
+guarantee
+  GF !taskAtStationZero;
+
+guarantee
+  GF !taskAtStationOne;
+
+guarantee
+  GF !taskAtStationTwo;
+
+guarantee
+  GF !taskAtStationThree;
+  
+  
+monitor boolean taskAtStationZero {
+  // Initially not
+  !taskAtStationZero;
+  // add task
+  G (pressedStationZero & !next(atEmgState)) -> (next(taskAtStationZero) = true);
+  // satisfies task 
+  G (atGivenStation(0) & taskAtStationZero & !pressedStationZero & !next(atEmgState)) -> (next(taskAtStationZero) = false);
+  // reset task
+  G (next(atEmgState)) -> (next(taskAtStationZero) = false);
+  // keep status 
+  G (atGivenStation(0) & !taskAtStationZero & !pressedStationZero & !next(atEmgState)) -> (next(taskAtStationZero) = taskAtStationZero);
+  G (!atGivenStation(0) & !pressedStationZero & !next(atEmgState)) -> (next(taskAtStationZero) = taskAtStationZero); 
+}
+  
+monitor boolean taskAtStationOne {
+  // Initially not
+  !taskAtStationOne;
+  // add task
+  G (pressedStationOne & !next(atEmgState)) -> (next(taskAtStationOne) = true);
+  // satisfies task
+  G (atGivenStation(1) & taskAtStationOne & !pressedStationOne & !next(atEmgState)) -> (next(taskAtStationOne) = false);
+   // reset task
+  G (next(atEmgState)) -> (next(taskAtStationOne) = false);
+  // keep status 
+  G (atGivenStation(1) & !taskAtStationOne & !pressedStationOne & !next(atEmgState)) -> (next(taskAtStationOne) = taskAtStationOne); 
+  G (!atGivenStation(1) & !pressedStationOne & !next(atEmgState)) -> (next(taskAtStationOne) = taskAtStationOne); 
+} 
+
+monitor boolean taskAtStationTwo {
+  // Initially not
+  !taskAtStationTwo;
+  // add task
+  G (pressedStationTwo & !next(atEmgState)) -> (next(taskAtStationTwo) = true);
+  //  satisfies task
+  G (atGivenStation(2) & taskAtStationTwo & !pressedStationTwo & !next(atEmgState)) -> (next(taskAtStationTwo) = false);
+  // reset task
+  G (next(atEmgState)) -> (next(taskAtStationTwo) = false);
+  // keep status 
+  G (atGivenStation(2) & !taskAtStationTwo & !pressedStationTwo & !next(atEmgState)) -> (next(taskAtStationTwo) = taskAtStationTwo); 
+  G (!atGivenStation(2) & !pressedStationTwo & !next(atEmgState)) -> (next(taskAtStationTwo) = taskAtStationTwo); 
+}
+
+monitor boolean taskAtStationThree {
+  // Initially not
+  !taskAtStationThree;
+  // add task
+  G (pressedStationThree & !next(atEmgState)) -> (next(taskAtStationThree) = true);
+  //  satisfies task
+  G (atGivenStation(3) & taskAtStationThree & !pressedStationThree & !next(atEmgState)) -> (next(taskAtStationThree) = false);
+  // reset task
+  G (next(atEmgState)) -> (next(taskAtStationThree) = false);
+  // keep status 
+  G (atGivenStation(3) & !taskAtStationThree & !pressedStationThree & !next(atEmgState)) -> (next(taskAtStationThree) = taskAtStationThree); 
+  G (!atGivenStation(3) & !pressedStationThree & !next(atEmgState)) -> (next(taskAtStationThree) = taskAtStationThree); 
+}
+

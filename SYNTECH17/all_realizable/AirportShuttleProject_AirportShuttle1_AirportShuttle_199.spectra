@@ -1,0 +1,161 @@
+import "../patterns/DwyerPatterns.spectra"
+
+module AirportShuttle
+
+env Int(0..3) station;
+env boolean atStation;
+
+env boolean pressedStationOne;
+env boolean pressedStationTwo;
+env boolean pressedStationThree;
+env boolean pressedStationFour;
+
+sys MotorCmd motors;
+sys boolean[4] shuttleTasks;
+
+type MotorCmd = {FWD, STOP, BWD};
+
+predicate atGivenStation(Int(0..3) index):
+  atStation & station=index;
+
+define 
+  stopping := motors = STOP;
+  forwarding := motors = FWD;
+  backwarding := motors = BWD;
+  
+  willEnterStation := !atStation & next(atStation);
+  
+  noTasks := shuttleTasks[0]=false & 
+             shuttleTasks[1]=false & 
+             shuttleTasks[2]=false & 
+             shuttleTasks[3]=false;
+  
+  noPressedStations := !pressedStationOne & 
+                       !pressedStationTwo & 
+                       !pressedStationThree & 
+                       !pressedStationFour;
+  // stopping
+  taskWillBeFalse := 
+    ((next(shuttleTasks[0]) = false) <->
+            ((shuttleTasks[0]=false & !pressedStationOne) | 
+            (shuttleTasks[0]=true & atGivenStation(0) & stopping))) &
+    ((next(shuttleTasks[1]) = false) <->
+            ((shuttleTasks[1]=false & !pressedStationTwo) | 
+            (shuttleTasks[1]=true & atGivenStation(1) & stopping))) &
+    ((next(shuttleTasks[2]) = false) <->
+            ((shuttleTasks[2]=false & !pressedStationThree) | 
+            (shuttleTasks[2]=true & atGivenStation(2) & stopping ))) &
+    ((next(shuttleTasks[3]) = false) <->
+            ((shuttleTasks[3]=false & !pressedStationFour) | 
+            (shuttleTasks[3]=true & atGivenStation(3) & stopping )));
+
+  stationWillIncrease := next(station) = station+1;
+  stationWillDecrease := next(station) = station-1;
+  
+///////////////////////////////////////
+// Environment Specification
+/////////////////////////////////////
+
+assumption initialStateEnv:
+ station = 0 & atStation & noPressedStations;
+
+assumption farwardingCauseStationIncrease:
+  pRespondsToS(forwarding &  !atGivenStation(3), stationWillIncrease | !forwarding);
+  
+assumption backwardingCauseStationDecrease:
+  pRespondsToS(backwarding & !atGivenStation(0), stationWillDecrease | !backwarding);
+
+// station number can only change when entering station
+assumption 
+  G !willEnterStation -> next(station) = station;
+
+// station can only increase by going forwarding (and entering station)
+assumption
+  G stationWillIncrease -> forwarding;
+
+// station can only decrease by going backwarding (and entering station)
+assumption
+  G stationWillDecrease -> backwarding; 
+
+// stations can only increase or decrease by one 
+assumption
+  G (next(station)= station) | (next(station)= station +1) | (next(station)= station-1); 
+
+// Station can not change while stopping
+assumption stationDoesNotChangeWhenStopping:
+  G  (stopping -> ((atStation = next(atStation)) & (station = next(station))));
+  
+assumption currentStationNotPressedWhileAtStation:
+  G (next(atGivenStation(0)) -> next(!pressedStationOne)) &
+    (next(atGivenStation(1)) -> next(!pressedStationTwo)) &
+    (next(atGivenStation(2)) -> next(!pressedStationThree)) &
+    (next(atGivenStation(3)) -> next(!pressedStationFour));
+
+
+
+///////////////////////////////////////
+// System Specification
+///////////////////////////////////////
+    
+// Initial state 
+guarantee initialState:
+  stopping & noTasks;
+  
+guarantee
+  G taskWillBeFalse;
+
+/* NOTE: taskWillBeFalse force guarantee that we must stop in order to satisfy Task! */
+
+
+///////////////////////////////////////
+// Safety of the system
+///////////////////////////////////////
+ 
+// if no tasks stop when entering station
+guarantee
+  G noTasks -> stopping;
+   
+guarantee
+  G atGivenStation(0) -> !backwarding;
+
+guarantee
+  G atGivenStation(3) -> !forwarding;
+  
+//guarantee stoppingAtStationOnlyIfHasTask:
+//  G 
+//   (((atGivenStation(0) &  stopping) -> shuttleTasks[0]=true) &
+//    ((atGivenStation(1) &  stopping) -> shuttleTasks[1]=true) &
+//    ((atGivenStation(2) &  stopping) -> shuttleTasks[2]=true) &
+//    ((atGivenStation(3) &  stopping) -> shuttleTasks[3]=true));
+ 
+//guarantee
+//  G 
+//   (((atGivenStation(0) &  shuttleTasks[0]=true) -> stopping) &
+//    ((atGivenStation(1) &  shuttleTasks[1]=true) -> stopping) &
+//    ((atGivenStation(2) &  shuttleTasks[2]=true) -> stopping) &
+//    ((atGivenStation(3) &  shuttleTasks[3]=true) -> stopping));  
+  
+// while not in station can't stop
+gar
+G !atStation -> !stopping;
+
+// can't change direction without stopping  
+gar
+  G (forwarding -> next (!backwarding)) & (backwarding -> next (!forwarding));
+    
+///////////////////////////////////////
+// Liveness of system
+///////////////////////////////////////
+
+// all Tasks Are Satisfied Eventually:
+guarantee
+  GF shuttleTasks[0]=false;
+guarantee
+  GF shuttleTasks[1]=false;
+guarantee
+  GF shuttleTasks[2]=false;
+guarantee
+  GF shuttleTasks[3]=false;
+  
+  
+  

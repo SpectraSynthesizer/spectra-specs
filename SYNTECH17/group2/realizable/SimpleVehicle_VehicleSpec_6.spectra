@@ -1,0 +1,49 @@
+
+ import "../patterns/DwyerPatterns.spectra"
+module VehicleSpec			
+
+
+env Distance sense;
+env boolean sound;
+
+sys MotorCmd mLeft;
+sys MotorCmd mRight;
+
+monitor boolean clapped {
+  !clapped; // initially not clapped
+  G sound <-> next(clapped)=!clapped; // change value of clapped at each sound
+}
+
+type MotorCmd = { FWD, STOP, BWD };
+type Distance = { CLEAR, BLOCKED };
+
+define
+  stopping := mLeft = STOP & mRight = STOP;
+  forwarding := mLeft = FWD & mRight = FWD;
+  turning := mLeft != mRight;
+  
+
+
+
+
+guarantee initialStop:
+  stopping;
+
+guarantee dontCrash:
+  G ((sense = BLOCKED) -> ! forwarding);
+
+guarantee 
+  GF forwarding;
+
+guarantee startTurningOnClap:
+  G clapped -> turning; 
+  
+
+assumption canGetClear:
+  pRespondsToS(turning, sense = CLEAR);
+
+assumption canForwardInfinitelyOften:
+  GF clapped != true & sense = CLEAR;
+        
+      
+

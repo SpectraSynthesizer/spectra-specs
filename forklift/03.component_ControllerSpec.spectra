@@ -1,0 +1,116 @@
+module ControllerSpec
+
+    env { CLEAR, BLOCKED } sense ;
+
+    sys { FWD, STOP, BWD } mLeft ;
+    sys { FWD, STOP, BWD } mRight ;
+    sys { LIFT, DROP, NIL } lift ;
+
+    sys boolean spec_loaded ;
+    sys boolean spec_droppedNotClear ;
+
+  // safety restrictions of environment
+  /////////////////////////////////////
+
+  // stay blocked if not backing, turning, or lifting obstacle 
+  assumption
+    G ((sense = BLOCKED & 
+          !((mLeft = BWD & mRight = FWD) | (mLeft = BWD & mRight = BWD) | (lift = LIFT))) 
+            -> next (sense = BLOCKED)
+    );
+
+  // block if going forward to next station
+  assumption
+    G ((sense = CLEAR & mLeft = FWD & mRight = FWD) 
+       -> next (sense = BLOCKED)
+    );
+
+  // always unblock if backing or turning
+  assumption
+    G (
+      ((mLeft = BWD & mRight = BWD) | (mLeft = BWD & mRight = FWD)) 
+        -> next (sense = CLEAR)
+    );
+
+  //unblock if lifting
+  assumption
+    G ( (sense = BLOCKED & lift = LIFT) 
+        -> next (sense = CLEAR)
+    );
+
+  // safety of system
+  ///////////////////////////////////////
+
+  // initial state
+  guarantee
+    mLeft = STOP & mRight = STOP & lift = NIL & ! spec_loaded & ! spec_droppedNotClear;
+
+  // controlling state of var spec_loaded
+  //////////////////////////////////////
+  guarantee
+    G ((lift = LIFT) -> next (spec_loaded));
+
+  guarantee
+    G ((lift = DROP) -> ! next (spec_loaded));
+
+  guarantee
+    G (lift = NIL -> next (spec_loaded) = spec_loaded);
+  //////////////////////////////////////
+  
+  // restricting lifting action based on var spec_loaded
+  guarantee
+    G (spec_loaded -> ! (lift = LIFT));
+
+  guarantee
+    G (! spec_loaded -> ! (lift = DROP));
+
+  // controlling state of var spec_droppedNotClear
+  //////////////////////////////////////
+  // dropping sets flag
+  guarantee
+    G ((lift = DROP) -> next (spec_droppedNotClear));
+  // backing up when not loaded or lifting clears the flag
+  guarantee  
+    G (((mLeft = BWD & mRight = BWD) & !spec_loaded) | (lift = LIFT) -> ! next (spec_droppedNotClear));
+  // if not set and not cleared flag is preserved
+  guarantee
+    G (
+      !(((mLeft = BWD & mRight = BWD) & !spec_loaded) | (lift = LIFT)) &
+      !(lift = DROP) ->
+      spec_droppedNotClear = next (spec_droppedNotClear)
+    );
+  // restricting moves based on flag
+  guarantee
+    G (spec_droppedNotClear -> ! (mLeft = FWD | mRight = FWD));
+
+
+  // don't drop or lift if not at a station (sense = clear)
+  guarantee
+    G (sense = CLEAR -> lift = NIL);
+    
+  // don't move while lifting
+  guarantee
+    G (lift != NIL -> (mLeft = STOP & mRight = STOP ));
+
+  // dont run into obstacles
+  guarantee
+    G (sense = BLOCKED -> ! (mLeft = FWD & mRight = FWD));
+
+  // only turn, go, stop or back
+  guarantee
+    G ((mLeft = FWD & mRight = FWD)
+      | (mLeft = BWD & mRight = FWD)
+      | (mLeft = STOP & mRight = STOP)
+      | (mLeft = BWD & mRight = BWD)
+    );
+
+    // leave station after (lift = DROP)
+    //  LTLSPEC
+    //    [] (command = drop  -> next (command) = turn);
+
+    // liveness of system
+    ///////////////////////////////////////
+
+  guarantee
+  GF ((lift=DROP));
+  

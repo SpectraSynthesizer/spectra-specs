@@ -1,0 +1,115 @@
+/*
+ * - removed some redundant assumptions
+ * - named all guarantees/assumptions, and made some cosmetic changes
+ *    (to make the spec more readable)
+ * 
+ */
+ 
+ // lane setup:
+ // right side of lane should be BLACK
+ // left side of lane should be WHITE
+import "../patterns/DwyerPatterns.spectra"
+  
+module ConvoyCarSpec     
+     
+env Int(0..10) sense;     // current distance from next car
+env Int(0..1) rightColor; // right lane sensor
+env Int(0..1) leftColor;  // left lane sensor
+sys Int(0..4) mLeft;      // left wheel speed
+sys Int(0..4) mRight;     // right wheel speed
+sys Int(0..1) beep;       // beeping on/off
+
+aux boolean accelerating;
+aux boolean slowingDown;
+
+define
+
+  // DRIVE STATE
+  stopping := mLeft = 0 & mRight = 0;
+  turningLeft := mLeft < mRight;
+  turningRight := mLeft > mRight;
+  turning := turningLeft | turningRight;
+  accelLeft := (next(mLeft) > mLeft) | (mLeft = 4 & next(mLeft)=4);
+  accelRight := (next(mRight) > mRight) | (mRight = 4 & next(mRight)=4); 
+  slowDownLeft := (mLeft = 0 & next(mLeft)=0) | (mLeft > next(mLeft));
+  slowDownRight := (mRight = 0 & next(mRight)=0) | (mRight > next(mRight));
+  
+  // LANE CONTROL
+  white := 1;
+  black := 0;
+  inLane := ((rightColor = black) & (leftColor = white));
+  reversedLane := ((rightColor = white) & (leftColor = black)); // reversed lane means car's in wrong direction
+  devLeft := ((leftColor = white & rightColor = white));  // car deviated to the left
+  devRight := ((rightColor = black & leftColor = black)); // car deviated to the right
+
+  // DISTANCE CONTROL
+  minDist := 0;
+  maxDist := 10;
+  inRange := (minDist < sense) & (sense < maxDist); // car in good range from next car
+  tooClose := sense <= minDist;   // car is too close to next car
+  laneClear := sense >= maxDist;  // car is too far from next car
+  nextCarCloser := inRange & (lastDist > sense);  // next car is closer than it was last iteration
+  nextCarFarther := inRange & (lastDist < sense); // next car is farther than it was last iteration
+
+monitor Int(0..10) lastDist{
+  lastDist = sense;
+  G next(lastDist) = sense;
+}
+
+guarantee initiallyStopping:
+  stopping;
+
+guarantee beepWhenMoving:
+  G (!stopping <-> beep = 1);
+  
+guarantee accel:
+  G (accelerating -> (accelLeft | accelRight));
+  
+guarantee slowDown:
+  G (slowingDown -> (slowDownLeft | slowDownRight));
+
+// move gradually between speeds:
+guarantee smoothnessLeft: 
+  G ((-1 <= next(mLeft) - mLeft) & (next(mLeft) - mLeft <= 1));
+guarantee smoothnessRight:
+  G ((-1 <= next(mRight) - mRight) & (next(mRight) - mRight <= 1));
+  
+guarantee accelerateIfClear:
+  G (laneClear -> accelerating);
+
+guarantee slowDownInRange: // car in range but needs to slow down
+  G (nextCarCloser -> slowingDown);
+
+guarantee accelInRange: // car in range but needs to accelerate
+  G (nextCarFarther -> accelerating);
+
+guarantee slowDownIfTooClose:
+  G (tooClose -> slowingDown);
+
+guarantee convoy:
+  GF (inRange | laneClear);
+
+guarantee stayInLane:
+  GF (inLane);
+ 
+guarantee advance:
+  GF (!stopping);
+
+guarantee
+  G (inLane -> !next(turning));
+  
+// if car deviated to the right and keeps turning left - then eventually it will return to lane  
+assumption canFixRightDeviation:
+  G (pRespondsToS((devRight & turningLeft), (inLane | !turningLeft)));
+
+// if car deviated to the left and keeps turning right - then eventually it will return to lane  
+assumption canFixLeftDeviation:
+  G (pRespondsToS((devLeft & turningRight), (inLane | !turningRight)));
+
+// if car in wrong direction and keeps turning right - then eventually it will return to lane (which implies it's in right direction)  
+assumption canFixReversedLane:
+  G (pRespondsToS((reversedLane & turningRight), (inLane | !turningRight)));  
+// if car stops for long enough, eventually lane is clear
+assumption laneClearEventually:
+  G (pRespondsToS(stopping, (laneClear | !stopping)));
+

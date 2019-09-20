@@ -1,0 +1,29 @@
+spec Utils
+
+
+type Vehicle = {NONE, CAR, EMERGENCY};
+
+
+predicate mutualExclusion(boolean a, boolean b): !(a & b);
+
+
+predicate tripleMutualExclusion(boolean source, boolean a, boolean b, boolean c):
+	!(source & a) & !(source & b) & !(source & c);
+
+
+predicate multiMutualExclusion(boolean source, boolean a, boolean b, boolean c, boolean d):
+	!(source & a) & !(source & b) & !(source & c) & !(source & d);
+
+
+predicate emergencyMultiMutualExclusion(Vehicle source, Vehicle a, Vehicle b, Vehicle c, Vehicle d):
+	!(source=EMERGENCY & a=EMERGENCY ) & !(source=EMERGENCY & b=EMERGENCY ) & 
+	!(source=EMERGENCY & c=EMERGENCY ) & !(source=EMERGENCY & d=EMERGENCY );
+
+	
+predicate noEmergency(Vehicle a,Vehicle b,Vehicle c,Vehicle d,Vehicle e,Vehicle f,Vehicle g,Vehicle h,Vehicle i,Vehicle j,Vehicle k,
+	Vehicle l,boolean greenA,boolean greenB,boolean greenC,boolean greenD,boolean greenE,boolean greenF,boolean greenG,boolean greenH,
+	boolean greenI,boolean greenJ,boolean greenK,boolean greenL):
+	(a!=EMERGENCY | (a=EMERGENCY & !greenA)) & (b!=EMERGENCY | (b=EMERGENCY & !greenB)) & (c!=EMERGENCY | (c=EMERGENCY & !greenC)) &
+	(d!=EMERGENCY | (d=EMERGENCY & !greenD)) & (e!=EMERGENCY | (e=EMERGENCY & !greenE)) & (f!=EMERGENCY | (f=EMERGENCY & !greenF)) &
+	(g!=EMERGENCY | (g=EMERGENCY & !greenG)) & (h!=EMERGENCY | (h=EMERGENCY & !greenH)) & (i!=EMERGENCY | (i=EMERGENCY & !greenI)) &
+	(j!=EMERGENCY | (j=EMERGENCY & !greenJ)) & (k!=EMERGENCY | (k=EMERGENCY & !greenK)) & (l!=EMERGENCY | (l=EMERGENCY & !greenL));

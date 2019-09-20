@@ -1,0 +1,471 @@
+import "../patterns/DwyerPatterns.spectra"
+
+module AirportShuttleWithTechnicalJob
+
+// Inputs
+env Int(0..3) station;
+env boolean atStation;
+env Button emgButton;
+env boolean readyToEmgBeep;
+env boolean pressedStationZero;
+env boolean pressedStationOne;
+env boolean pressedStationTwo;
+env boolean pressedStationThree;
+env boolean longTimeWithoutReqs;
+env boolean doorAck;
+env boolean mPressedStationZero;
+env boolean mPressedStationOne;
+env boolean mPressedStationTwo;
+env boolean mPressedStationThree;
+env boolean technicianAck; 
+
+// Outputs
+sys MotorCmd motors;
+sys boolean emgBeepProcessReq;
+sys boolean countTimeSinceReqs;
+sys boolean doorReq;
+sys boolean startTechnicalJob;
+
+// Type definitions
+type Button = {PRESSED, RELEASED};
+type MotorCmd = {FWD, STOP, BWD};
+
+// Predicates
+predicate atGivenStation(Int(0..3) index):
+  atStation & station=index;
+
+// Defines
+define 
+  
+  // Motors
+  stopping := motors = STOP;
+  forwarding := motors = FWD;
+  backwarding := motors = BWD;
+  
+  // Stations
+  atBaseStation := atGivenStation(0);
+  stationWillIncrease := next(station) = station+1;
+  stationWillDecrease := next(station) = station-1;
+  willEnterStation := !atStation & next(atStation);
+  
+  // Presses
+  noPressedStations := !pressedStationZero & !pressedStationOne & !pressedStationTwo & !pressedStationThree;
+  noMpressedStations := !mPressedStationZero & !mPressedStationOne & !mPressedStationTwo & !mPressedStationThree;
+  
+  // Tasks
+  noTasks := !taskAtStationZero & !taskAtStationOne & !taskAtStationTwo & !taskAtStationThree;
+  atStationWithTask := atStation & ((station = 0 & taskAtStationZero) |
+                                    (station = 1 & taskAtStationOne) |
+                                    (station = 2 & taskAtStationTwo) |
+                                    (station = 3 & taskAtStationThree));                    
+  noTasksForward := ((atGivenStation(0) & (!taskAtStationOne & !taskAtStationTwo & !taskAtStationThree)) |
+                    (atGivenStation(1) &  (!taskAtStationTwo & !taskAtStationThree)) |
+                    (atGivenStation(2) &  (!taskAtStationThree)));
+  noTasksBackward := ((atGivenStation(3) & (!taskAtStationTwo & !taskAtStationOne & !taskAtStationZero)) | 
+                     (atGivenStation(2) &  (!taskAtStationOne & !taskAtStationZero)) |
+                     (atGivenStation(1) &  (!taskAtStationZero)));
+
+
+///////////////////////////////////////
+// Monitors 
+///////////////////////////////////////
+
+/**
+ * monitor taskAtStationZero is true when there is a task at station zero
+ */
+monitor boolean taskAtStationZero {
+  // Initially not taskAtStationZero
+  !taskAtStationZero;
+  // Add task
+  G (pressedStationZero & !next(atEmgState) & !next(maintenanceAtStationZero)) -> (next(taskAtStationZero) = true);
+  // Satisfies task 
+  G (atGivenStation(0) & taskAtStationZero & !pressedStationZero & !next(atEmgState)) -> (next(taskAtStationZero) = false);
+  // Reset task
+  G (next(atEmgState)) -> (next(taskAtStationZero) = false);
+  // Keep task's status 
+  G ((!pressedStationZero | next(maintenanceAtStationZero)) &
+    (!atGivenStation(0) | !taskAtStationZero | pressedStationZero) &
+    (next(!atEmgState))) -> (next(taskAtStationZero) = taskAtStationZero); 
+}
+
+/**
+ * monitor taskAtStationOne is true when there is a task at station one
+ */
+monitor boolean taskAtStationOne {
+  // Initially not taskAtStationOne
+  !taskAtStationOne;
+  // Add task
+  G (pressedStationOne & next(!atEmgState) & next(!maintenanceAtStationOne)) -> (next(taskAtStationOne) = true);
+  // Satisfies task
+  G (atGivenStation(1) & taskAtStationOne & !pressedStationOne & !next(atEmgState)) -> (next(taskAtStationOne) = false);
+   // Reset task
+  G (next(atEmgState)) -> (next(taskAtStationOne) = false);
+  // Keep task's status 
+  G ((!pressedStationOne | next(maintenanceAtStationOne)) &
+    (!atGivenStation(1) | !taskAtStationOne | pressedStationOne) &
+    (next(!atEmgState))) -> (next(taskAtStationOne) = taskAtStationOne); 
+} 
+
+/**
+ * monitor taskAtStationTwo is true when there is a task at station two
+ */
+monitor boolean taskAtStationTwo {
+  // Initially not taskAtStationTwo
+  !taskAtStationTwo;
+  // Add task
+  G (pressedStationTwo & !next(atEmgState) & !next(maintenanceAtStationTwo)) -> (next(taskAtStationTwo) = true);
+  // Satisfies task
+  G (atGivenStation(2) & taskAtStationTwo & !pressedStationTwo & !next(atEmgState)) -> (next(taskAtStationTwo) = false);
+  // Reset task
+  G (next(atEmgState)) -> (next(taskAtStationTwo) = false);
+  // Keep task's status 
+  G ((!pressedStationTwo | next(maintenanceAtStationTwo)) &
+    (!atGivenStation(2) | !taskAtStationTwo | pressedStationTwo) &
+    (next(!atEmgState))) -> (next(taskAtStationTwo) = taskAtStationTwo); 
+}
+
+/**
+ * monitor taskAtStationThree is true when there is a task at station three
+ */
+monitor boolean taskAtStationThree {
+  // Initially not taskAtStationThree
+  !taskAtStationThree;
+  // Add task
+  G (pressedStationThree & !next(atEmgState) & !next(maintenanceAtStationThree)) -> (next(taskAtStationThree) = true);
+  // Satisfies task
+  G (atGivenStation(3) & taskAtStationThree & !pressedStationThree & !next(atEmgState)) -> (next(taskAtStationThree) = false);
+  // Reset task
+  G (next(atEmgState)) -> (next(taskAtStationThree) = false);
+  // Keep task's status 
+  G ((!pressedStationThree | next(maintenanceAtStationThree)) &
+    (!atGivenStation(3) | !taskAtStationThree | pressedStationThree) &
+    (next(!atEmgState))) -> (next(taskAtStationThree) = taskAtStationThree); 
+}  
+
+/**
+ * monitor goToBaseStation is true when there is a need to go to the base station
+ */
+monitor boolean goToBaseStation {
+  // Initially not goToBaseStation
+  !goToBaseStation;
+  // Set goToBaseStation
+  G (noTasks & longTimeWithoutReqs & !atEmgState & !atBaseStation) -> next(goToBaseStation);
+  // reset goToBaseStation
+  G atBaseStation -> next(!goToBaseStation);
+  G (atStation & !noTasks) -> next(!goToBaseStation);
+  G atEmgState -> next(!goToBaseStation);
+  // Keep goToBaseStation's status 
+  G (!atBaseStation & !atEmgState & (!atStation|noTasks) & (!longTimeWithoutReqs|!noTasks)) -> next(goToBaseStation) = goToBaseStation;
+}
+
+/**
+ * monitor maintenanceAtStationZero becomes true when mPressedStationZero is pressed
+ * until it is pressed again
+ */
+monitor boolean maintenanceAtStationZero{
+  // Initially not maintenanceAtStationZero
+  !maintenanceAtStationZero;
+  // Change value of maintenanceAtStationZero at each press on mPressedStationZero
+  G mPressedStationZero <-> next(maintenanceAtStationZero) = !maintenanceAtStationZero;
+}
+
+/**
+ * monitor maintenanceAtStationOne becomes true when mPressedStationOne is pressed
+ * until it is pressed again
+ */
+monitor boolean maintenanceAtStationOne{
+  // Initially not maintenanceAtStationOne
+  !maintenanceAtStationOne;
+  // Change value of maintenanceAtStationOne at each press on mPressedStationOne
+  G mPressedStationOne <-> next(maintenanceAtStationOne) = !maintenanceAtStationOne;
+}
+
+/**
+ * monitor maintenanceAtStationTwo becomes true when mPressedStationTwo is pressed
+ * until it is pressed again
+ */
+monitor boolean maintenanceAtStationTwo{
+  // Initially not maintenanceAtStationTwo
+  !maintenanceAtStationTwo;
+  // Change value of maintenanceAtStationTwo at each press on mPressedStationTwo
+  G mPressedStationTwo<-> next(maintenanceAtStationTwo) = !maintenanceAtStationTwo;
+}
+
+/**
+ * monitor maintenanceAtStationThree becomes true when mPressedStationThree is pressed
+ * until it is pressed again
+ */
+monitor boolean maintenanceAtStationThree{
+  // Initially not maintenanceAtStationThree
+  !maintenanceAtStationThree;
+  // Change value of maintenanceAtStationThree at each press on mPressedStationThree
+  G mPressedStationThree <-> next(maintenanceAtStationThree) = !maintenanceAtStationThree;
+}
+
+/**
+ * monitor atEmgState becomes true when emgButton is pressed
+ * and stays true until atStation and emgButton is pressed again
+ */
+monitor boolean atEmgState {
+  // Initially not atEmgState
+  !atEmgState;
+  // When atEmgState and not atStation, keep atEmgState status
+  G (!atStation & atEmgState) -> next(atEmgState);
+  // Else, change the value of atEmgState at each press on emgButton 
+  G (atStation | !atEmgState) -> (emgButton = PRESSED <-> (next(atEmgState)=!atEmgState));
+} 
+
+/**
+ * monitor waitingForDoor becomes true when doorReq is true
+ * and doorAck hasn't been received yet
+ */
+monitor boolean waitingForDoor{
+  // Initially not waitingForDoor
+  !waitingForDoor;
+  // waitingForDoor when door request is sent and door ack hasn't been received yet
+  G (doorReq & !doorAck) -> next(waitingForDoor);
+  // Not waitingForDoor when doorAck is received
+  G doorAck-> next(!waitingForDoor);
+  // Else, keep waitingForDoor's status
+  G (!doorReq & !doorAck) -> (next(waitingForDoor)= waitingForDoor);
+}
+
+/**
+ * monitor openDoorAtEmgState becomes when entering emergency state
+ * and it stays true until door request is sent
+ */
+monitor boolean openDoorAtEmgState {
+  // Initially not openDoorAtEmgState
+  ! openDoorAtEmgState;
+  // openDoorAtEmgState becomes true when entering emergency state
+  G next(atEmgState) & !atEmgState -> next(openDoorAtEmgState);
+  // openDoorAtEmgState becomes false when at emergency state and door request is sent
+  G atEmgState & doorReq -> next(!openDoorAtEmgState);
+  // Else, keep openDoorAtEmgState's status
+  G (!atEmgState | !doorReq) & (next(!atEmgState) | atEmgState)-> next(openDoorAtEmgState) = openDoorAtEmgState;
+}
+
+/**
+ * monitor waitingForEmgBeeper is true when emgBeepProcessReq is true 
+ * and readyToEmgBeep ack hasn't been received yet
+ */
+monitor boolean waitingForEmgBeeper {
+  // Initially not waitingForEmgBeeper
+  !waitingForEmgBeeper;
+  // waitingForEmgBeeper when emgBeepProcessReq request is sent
+  G (emgBeepProcessReq -> next(waitingForEmgBeeper));
+  // Not waitingForEmgBeeper when readyToEmgBeep ack has been received
+  G (readyToEmgBeep -> (next(!waitingForEmgBeeper) | emgBeepProcessReq));
+  // Else, Keep waitingForEmgBeeper status
+  G (!emgBeepProcessReq & !readyToEmgBeep -> waitingForEmgBeeper = next(waitingForEmgBeeper));
+} 
+
+
+/**
+ * monitor doorOperationsCounter is counting open-close operations
+ * From 0 to 5
+ */ 
+monitor Int(0..5) doorOperationsCounter {
+  doorOperationsCounter = 0;
+  G doorAck & (doorOperationsCounter != 5) -> (next(doorOperationsCounter) = (doorOperationsCounter + 1));  
+  G doorOperationsCounter = 5 -> next(doorOperationsCounter) = 0;
+  G (!doorAck & doorOperationsCounter != 5) -> (next(doorOperationsCounter) = doorOperationsCounter);
+}
+
+/**
+ * monitor techGuyInAction becomes true when the door has been opened for 5 times, 
+ * and technicianAck hasn't been received yet
+ */
+monitor boolean techGuyInAction {
+  ! techGuyInAction;
+  G ( (doorOperationsCounter = 5 & !technicianAck) -> next(techGuyInAction));
+  G ( technicianAck -> next(!techGuyInAction));
+  G ( (!technicianAck & doorOperationsCounter != 5) -> techGuyInAction = next(techGuyInAction));
+}
+                                        
+///////////////////////////////////////
+// Environment Specification
+///////////////////////////////////////
+
+// Initial state of the environment
+assumption initialStateEnv:
+  atGivenStation(0) 
+      & noPressedStations 
+      & emgButton = RELEASED 
+      & !readyToEmgBeep 
+      & !longTimeWithoutReqs 
+      & !doorAck
+      & noMpressedStations
+      & !technicianAck;
+
+// Going forward causes station to increase 
+assumption forwardingCauseStationToIncrease:
+  pRespondsToS(forwarding &  !atGivenStation(3), stationWillIncrease | !forwarding);
+
+// Going backward causes station to decrease   
+assumption backwardingCauseStationToDecrease:
+  pRespondsToS(backwarding & !atGivenStation(0), stationWillDecrease | !backwarding);
+
+// Station changes only when entering station
+assumption stationChangesOnlyWhenEnteringStation:
+  G !willEnterStation -> next(station) = station;
+
+// Station increases by going forward and entering station
+assumption stationIncreasesByForwardingAndEntringStation:
+  G willEnterStation & forwarding -> stationWillIncrease;
+
+// Station decreases by going backward and entering station
+assumption stationDecreasesByBackwardingAndEntringStation:
+  G willEnterStation & backwarding -> stationWillDecrease; 
+
+// Stations can only stay the same, increase by 1 or decrease by 1 
+assumption stationCanOnlyStayTheSameOrChangeByOne:
+  G (next(station) = station) | (next(station) = station+1) | (next(station) = station-1); 
+
+// Station can't change while stopping
+assumption stationCannotChangewhileStopping:
+  G  (stopping -> ((atStation = next(atStation)) & (station = next(station))));
+ 
+// Current station isn't pressed while at current station 
+assumption currentStationIsNotPressedWhileAtCurrentStation:
+  G (next(atGivenStation(0)) -> next(!pressedStationZero)) &
+    (next(atGivenStation(1)) -> next(!pressedStationOne)) &
+    (next(atGivenStation(2)) -> next(!pressedStationTwo)) &
+    (next(atGivenStation(3)) -> next(!pressedStationThree));
+
+// Door returns answer eventually
+assumption doorReturnsAnswerEventually:
+pRespondsToS (waitingForDoor, doorAck);
+
+// No strange door acks
+assumption noStrangedoorAcks:
+  G (next(doorAck) -> (waitingForDoor & !doorAck));
+
+// Beeper returns answer eventually
+assumption beeperReturnsAnswerEventually:
+pRespondsToS (waitingForEmgBeeper, readyToEmgBeep);
+
+// No strange ready to beep acks
+assumption noStrangeReadyToBeepAcks:
+  G (next(readyToEmgBeep) -> (waitingForEmgBeeper & !readyToEmgBeep));
+
+// Not always at emergency state
+assumption notAlwaysAtEmgState:
+  GF !atEmgState; 
+
+// technicianAck returns answer eventually  
+assumption doneTechnicianActionEventually:
+  pRespondsToS(techGuyInAction, technicianAck);
+ 
+// No strange technicianAck
+assumption noStrangeTechnicianAcks:
+  G (next(technicianAck) -> (techGuyInAction & !technicianAck));
+
+
+///////////////////////////////////////
+// System Specification
+///////////////////////////////////////
+    
+// Initial state of the system
+guarantee initialStateSys:
+  stopping & !doorReq & !startTechnicalJob;
+
+// Stop when passing a station that was called
+guarantee stopWhenPassingAstationThatWasCalled:
+  G atStationWithTask -> stopping;
+
+// Open door iff: at station, door is close and there is a task or emergency state
+guarantee openDoorOnlyWhenNeeded:
+G (!waitingForDoor & ((atStation & atEmgState & openDoorAtEmgState)| atStationWithTask)) <-> doorReq; 
+
+// Stop while waiting for door  
+guarantee stopWhileWaitingForDoor:
+  G waitingForDoor -> stopping;
+
+// Stop when at emergency state and at station
+guarantee stopWhenAtEmgStateAndAtStation:
+  G atStation & atEmgState -> stopping;
+
+// Beep iff: entering station at emergency state or already at station at emergency state and readyToEmgBeep ack has been received
+guarantee beepEmgIffEnteringStationOrReadyToEmgBeepAtStation:
+G ((atEmgState & PREV(willEnterStation))|(atStation & readyToEmgBeep & atEmgState)) <-> emgBeepProcessReq;
+
+// Stop when at base station and there are no tasks
+guarantee stopWhenAtBaseStationAndNoTasks:
+  G noTasks & atBaseStation -> stopping;
+  
+// Count time since requests iff: there are no pressed stations and not at emergency state
+guarantee countTimeSinceReqsIffNoPressedStationsAndNotAtEmgState:
+  G noPressedStations & !atEmgState <-> countTimeSinceReqs;
+
+// Stop when technician action is required 
+guarantee stopWhenTechGuyInAction:
+G (techGuyInAction & atStation -> stopping);
+
+// Start technician job iff entering techGuyInAction state
+guarantee
+G !techGuyInAction & next(techGuyInAction) <-> next(startTechnicalJob);
+
+
+///////////////////////////////////////
+// Safety of the system
+///////////////////////////////////////
+  
+// Don't go backward when at station 0 
+guarantee dontGoBackwardWhenAtStationZero:
+  G atGivenStation(0) -> !backwarding;
+
+// Don't go forward when at station 3  
+guarantee dontGoForwardWhenAtStationThree:
+  G atGivenStation(3) -> !forwarding;
+
+// Don't go forward when there are no tasks forward
+guarantee dontGoForwardWhenNoTasksForward:
+  G noTasksForward -> !forwarding;  
+
+// Don't go backward when there are no tasks backward
+guarantee dontGoBackwardWhenNoTasksBackward:
+  G noTasksBackward & !goToBaseStation -> !backwarding; 
+
+// Stop when at station, there are no tasks, and there is no need to go to base station
+guarantee stopWhenAtStationAndNoTasksAndNotGoToBaseStation:
+  G noTasks & atStation & !goToBaseStation -> stopping;
+
+// Stop only at station
+guarantee stopOnlyAtStation:
+  G !atStation -> !stopping;
+
+// Don't change direction without stopping  
+guarantee dontChangeDirectionWithoutStopping:
+  G (!stopping -> (next(motors) = motors | next(stopping)));
+
+// Prevent unnecessary stops  
+guarantee preventUnnecessaryStops:
+  G (!goToBaseStation & atStation & !atStationWithTask & !noTasks & !waitingForDoor & !techGuyInAction) -> !stopping; 
+
+ 
+///////////////////////////////////////
+// Liveness of system
+///////////////////////////////////////
+
+// Task at station zero is satisfied eventually
+guarantee taskAtStationZeroIsSatisfiedEventually:
+  GF !taskAtStationZero;
+
+// Task at station one is satisfied eventually
+guarantee taskAtStationOneIsSatisfiedEventually:
+  GF !taskAtStationOne;
+
+// Task at station two is satisfied eventually
+guarantee taskAtStationTwoIsSatisfiedEventually:
+  GF !taskAtStationTwo;
+
+// Task at station three is satisfied eventually
+guarantee taskAtStationThreeIsSatisfiedEventually:
+  GF !taskAtStationThree;
+
+// Not always goToBaseStation
+guarantee NotAlwaysGoToBaseStation: 
+  GF !goToBaseStation;
+
+  

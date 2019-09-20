@@ -1,0 +1,70 @@
+// Initial file contents for AspectLTL aspect file (*.altl)
+module PCar
+		env {CLEAR, BLOCKED} obstacle ;
+		env {CLEAR,P_O, BLOCKED} sideSense;
+//		new park: boolean;
+//		new policy: {SEEKING,PARKING,PARKED};
+//		new emgButton: boolean;
+		sys {FWD, BWD, STOP} throttle ;
+		sys {RIGHT,LEFT, CENTER} steer ;
+guarantee
+	G (obstacle=BLOCKED -> ( !(throttle = FWD) ));
+guarantee
+	G (((obstacle = CLEAR) & (sideSense = CLEAR)) ->  (steer = CENTER));
+guarantee
+  GF ((throttle=FWD)&(steer=CENTER));
+//LTLSPEC
+//	G(((sideSense = P_O) | (sideSense = CLEAR)) -> (park));
+//LTLSPEC
+//	G ((park) ->F((obstacle = BLOCKED) & (sideSense = BLOCKED)));
+//LTLSPECENV
+//	!(park); // init state for env. there is no parking space at the beginning.
+assumption
+  respondsTo((throttle=BWD),(obstacle=CLEAR));
+assumption
+  respondsTo(((throttle=FWD)&(steer=CENTER)&(sideSense=BLOCKED)),(sideSense=CLEAR));
+
+  sys { S0, S1, S2} spec_b2f ;
+
+guarantee -- initial assignments: initial state
+  spec_b2f=S0;
+
+guarantee -- safety this and next spec_b2f
+  G((spec_b2f=S0 & ((!(throttle = BWD) & !(throttle = STOP)) | 
+  		(throttle = BWD & throttle = FWD) | 
+  		(!(throttle = FWD) & throttle = STOP) | 
+  		(!(throttle = BWD) & throttle = FWD & throttle = STOP)) & next(spec_b2f=S0)) |
+  (spec_b2f=S0 & (throttle = BWD & !(throttle = FWD) & !(throttle = STOP)) & next(spec_b2f=S1)) |
+  (spec_b2f=S1 & (!(throttle = FWD) & throttle = STOP) & next(spec_b2f=S0)) |
+  (spec_b2f=S1 & (!(throttle = FWD) & !(throttle = STOP)) & next(spec_b2f=S1)) |
+  (spec_b2f=S1 & (throttle = FWD) & next(spec_b2f=S2)) |
+  (spec_b2f=S2 & next(spec_b2f=S2)));
+
+assumption -- equivalence of satisfaction
+  GF (spec_b2f=S0|spec_b2f=S1);
+  
+  sys { S0, S1, S2} spec_f2b ;
+
+guarantee -- initial assignments: initial state
+  spec_f2b=S0;
+
+guarantee -- safety this and next spec_b2f
+  G((spec_f2b=S0 & ((!(throttle = FWD) & !(throttle = STOP)) | 
+  		(throttle = FWD & throttle = BWD) | 
+  		(!(throttle = BWD) & throttle = STOP) | 
+  		(!(throttle = FWD) & throttle = BWD & throttle = STOP)) & next(spec_f2b=S0)) |
+  (spec_f2b=S0 & (throttle = FWD & !(throttle = BWD) & !(throttle = STOP)) & next(spec_f2b=S1)) |
+  (spec_f2b=S1 & (!(throttle = BWD) & throttle = STOP) & next(spec_f2b=S0)) |
+  (spec_f2b=S1 & (!(throttle = BWD) & !(throttle = STOP)) & next(spec_f2b=S1)) |
+  (spec_f2b=S1 & (throttle = BWD) & next(spec_f2b=S2)) |
+  (spec_f2b=S2 & next(spec_f2b=S2)));
+
+assumption -- equivalence of satisfaction
+  GF (spec_f2b=S0|spec_f2b=S1);
+
+pattern respondsTo(trigger, response) {
+  var boolean responded;
+  responded;
+  G (next(responded) iff (response or responded and !trigger));
+  GF (responded);
+}

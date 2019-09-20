@@ -1,0 +1,598 @@
+module e
+
+
+
+env Color s0;
+env Color s1;
+env Color s2;
+env Color s3;
+env Color s4;
+env Color s5;
+
+env Task task;
+
+
+sys boolean isMoving;
+sys Int(0..5) from;
+sys Int(0..5) to;
+
+//these vars store the colors of the balls that 'from' and 'to' point to
+aux Color fromColor;
+aux Color toColor;
+
+
+/*
+ * EMPTY denotes an empty station
+ * NOT denotes a not exists station. For example, if there're only 4 stations, then the stations[4] = NOT, and stations[5] = NOT
+ * 
+ */
+type Color = {RED, GREEN, BLUE, EMPTY, NOT};
+
+/*
+ * During the INIT mode, the robot scans the stations, and checks how many stations there're, and what are their balls' colors
+ * MOVE moves the ball from 'from' to 'to', assuming 'to' is an empty station
+ * NOTHING means that the robot stands and does not move, and just does nothing
+ * 
+ * Notice that MOVE essentially swaps between 'from' and 'to',
+ * as after MOVE 'from' points to the empty place that previously was in the place 'to' points to,
+ * and 'to' points to the ball that previously was in the place pointed to by 'from'
+ */
+ 
+
+
+
+type Task = {
+  SCAN,
+  SORT, //sorts the stations using mode = MOVE, and then satisfies mode = NOTHING 
+  EXCHANGE, //exchanges two different colored balls using mode = MOVE
+  
+  SWAP_RED_AND_BLUE,
+  MOVE_RED_LEFT,
+  GATHER_REDS,
+  
+  //MANUAL_MOVE, //move from 'from' to 'to'
+  //HANOI_MOVE,
+  //STOP_MOVING,
+  //SHUT OFF,
+  
+  //MOVE_RIGHT,
+  //MOVE_LEFT,
+  //MOVE_UP,
+  //MOVE_DOWN,
+   
+  HANOI
+  
+};
+
+
+
+gar moveRequirements:
+  G (isMoving & task != HANOI) -> (fromColor != NOT & toColor = EMPTY);
+
+
+//assigns colorIndex = colors[index];
+predicate assign(Int(0..5) index, Color colorIndex):
+  ((index = 0) -> colorIndex = s0) &
+  ((index = 1) -> colorIndex = s1) &
+  ((index = 2) -> colorIndex = s2) &
+  ((index = 3) -> colorIndex = s3) &
+  ((index = 4) -> colorIndex = s4) &
+  ((index = 5) -> colorIndex = s5) ;
+
+gar G next(assign(from, fromColor));
+gar G next(assign(to, toColor));
+
+
+
+// set the next colors to aColor and bColor
+predicate setColor(Int(0..5) index, Color color):
+  ((index = 0) -> next(s0)=color) &
+  ((index = 1) -> next(s1)=color) &
+  ((index = 2) -> next(s2)=color) &
+  ((index = 3) -> next(s3)=color) &
+  ((index = 4) -> next(s4)=color) &
+  ((index = 5) -> next(s5)=color) ;
+  
+asm saveOnStaying:
+  G !isMoving & task != SCAN -> saveAll;
+
+//asm saveOnMoving:
+//  G isMoving -> (onExchangeSave & swap);
+
+
+gar
+  from != to;
+gar
+  G next(from) != next(to);
+
+
+asm saveOnMoving:
+  G (isMoving & task != SCAN & task != HANOI) -> (onExchangeSave & swap);
+  
+
+define
+   //all the colors stay in their positions
+  saveAll :=
+    (next(s0) = s0) &
+    (next(s1) = s1) &
+    (next(s2) = s2) &
+    (next(s3) = s3) &
+    (next(s4) = s4) &
+    (next(s5) = s5) ;
+    
+  //when we swap between 'from' and 'to' we need to save the values of all the places except 'from' and 'to' 
+  onExchangeSave :=
+   
+    (((from != 0) & (to!=0)) -> ((next(s0) = s0))) &
+    (((from != 1) & (to!=1)) -> ((next(s1) = s1))) &
+    (((from != 2) & (to!=2)) -> ((next(s2) = s2))) &
+    (((from != 3) & (to!=3)) -> ((next(s3) = s3))) &
+    (((from != 4) & (to!=4)) -> ((next(s4) = s4))) &
+    (((from != 5) & (to!=5)) -> ((next(s5) = s5))) ;
+
+  
+  //define
+  //  swap :=
+  //    (fromColor = next(toColor)) &
+  //    (toColor = next(fromColor)) ;
+  swap :=
+    setColor(from, toColor) & setColor(to, fromColor);
+    
+    
+
+//asserts that the station in this index existsPred
+predicate existsPred(Int(0..5) index):
+  
+  ((index = 0) -> (s0 != NOT)) &
+  ((index = 1) -> (s1 != NOT)) &
+  ((index = 2) -> (s2 != NOT)) &
+  ((index = 3) -> (s3 != NOT)) &
+  ((index = 4) -> (s4 != NOT)) &
+  ((index = 5) -> (s5 != NOT)) ;
+
+
+
+
+/*
+ * 
+ * 
+ * 
+ * 
+ * ------------------ SCAN TASK ---------------
+ * 
+ * 
+ * 
+ * 
+ */
+
+asm startWithScan:
+  task = SCAN;
+
+/*
+ * 
+ * ----------- SORT TASK ------------
+ * 
+ * 
+ */
+
+
+asm continueSortUntilDone:
+  G (task = SORT & !sortDone) -> next(task) = SORT; 
+  
+gar
+  GF (task = SORT & sortAsms) -> sortDone;
+
+gar
+  G task = SORT & sortDone -> !isMoving;
+
+      
+   
+   
+//all of the stations (excluding empty and non-existing stations)
+//contain balls are colored in 'color' (the input color) 
+predicate allEqual(Color color):
+  ((s0 = color) | (s0 = EMPTY) | (s0 = NOT)) &
+  ((s1 = color) | (s1 = EMPTY) | (s1 = NOT)) &
+  ((s2 = color) | (s2 = EMPTY) | (s2 = NOT)) &
+  ((s3 = color) | (s3 = EMPTY) | (s3 = NOT)) &
+  ((s4 = color) | (s4 = EMPTY) | (s4 = NOT)) &
+  ((s5 = color) | (s5 = EMPTY) | (s5 = NOT)) ;
+
+  
+define
+   
+   /*
+    * These assumptions are needed as in the general case the generated automaton
+    * requires more heap memory than the standard heap memory in Eclipse.
+    * So, we need to focus on special cases.
+    * 
+    */
+ 
+   
+   
+  sortAsms :=
+    somethingEmpty & firstStationsExist;
+    //somethingEmpty & firstStationsExist & somethingExists & !equal;
+
+
+/*
+ * The stations are ordered such that the non-existing stations are to the end
+ * 
+ * This is needed as otherwise, sorting were not possible,
+ * as sorting never moves non-existing stations, and in sorted array,
+ * the non-existing ones should be to the end
+ * 
+ * This is implemented in the following way:
+ * if something does not exist,
+ * then its successor must also not exist,
+ * and so does its successor, and so forth.
+ *  
+ */
+ 
+  firstStationsExist :=
+    ((s0 = NOT) -> (s1 = NOT)) &
+    ((s1 = NOT) -> (s2 = NOT)) &
+    ((s2 = NOT) -> (s3 = NOT)) &
+    ((s3 = NOT) -> (s4 = NOT)) &
+    ((s4 = NOT) -> (s5 = NOT)) ;
+    
+    
+ 
+  somethingEmpty := 
+ 
+    (s0 = EMPTY) |
+    (s1 = EMPTY) |
+    (s2 = EMPTY) |
+    (s3 = EMPTY) |
+    (s4 = EMPTY) |
+    (s5 = EMPTY) ;
+  
+  
+  
+  
+   sortDone :=
+      (s0 <= s1) &
+      (s1 <= s2) &
+      (s2 <= s3) &
+      (s3 <= s4) &
+      (s4 <= s5) ;
+
+/*
+ * 
+ * 
+ * 
+ * ---------  HANOI TASK -------------------
+ * 
+ * Recall that in Hanoi task moving from 'from' to 'to' gets another interpretation
+ * 
+ * 
+ */
+    
+
+
+asm continueHanoiUntilDone:
+  G (task = HANOI & !hanoiDone) -> next(task) = HANOI;
+    
+gar
+  GF (task = HANOI & hanoiAsms) -> hanoiDone;
+
+gar
+  G task = HANOI & hanoiDone -> !isMoving;     
+
+
+asm
+  G isMoving & task = HANOI -> onExchangeSave;
+  
+gar
+  G task = HANOI & isMoving -> hanoiLegalMove;
+  
+  
+define
+
+
+  hanoiAsms :=
+    s0 != NOT &
+    s1 != NOT &
+    s2 != NOT ;
+    
+//  hanoiAsms :=
+//    s0 != NOT &
+//    s1 != NOT &
+//    s2 != NOT ;
+  
+//  hanoiAsms := //initially, only the first tower is occupied  
+//    (s1 = EMPTY) &
+//    (s2 = EMPTY);
+  
+  hanoiDone := //at the end, only the second tower is occupied
+    (s0 = EMPTY) &
+    (s2 = EMPTY);
+  
+  hanoiLegalMove :=
+    (from <= 2) & //only 3 towers exist
+    (to   <= 2) & //only 3 towers exist
+    toColor <= fromColor;
+    
+
+asm
+  G (task = HANOI & isMoving & hanoiAsms & hanoiLegalMove) ->
+      incrementColor(from);  
+    
+asm
+  G (task = HANOI & isMoving & hanoiAsms & hanoiLegalMove) ->
+      setColor(to, fromColor) ;
+      //incrementColor(from);
+
+//in future version there will be dec and strictDec predicates for strict and non-strict inequalities,
+//and there will be two asms: G dec, GF strictDec
+predicate incrementColor(Int (0..5) index):
+  ((index = 0 & s0 != EMPTY) -> (next(s0) > s0) & (next(s0) != NOT)) &
+  ((index = 1 & s1 != EMPTY) -> (next(s1) > s1) & (next(s1) != NOT)) &
+  ((index = 2 & s2 != EMPTY) -> (next(s2) > s2) & (next(s2) != NOT)) ;
+
+
+/*
+ * 
+ * 
+ * 
+ * 
+ * ----------- EXCHANGE TASK ---------------
+ * 
+ * 
+ * 
+ */
+ 
+ 
+gar
+  G task = EXCHANGE -> (isMoving & incrementFrom);
+
+      
+        
+   
+//asm G (task = EXCHANGE & next(task) != EXCHANGE) -> from = 1;
+
+ 
+ define 
+ 
+ /*
+   * We iterate over all existing values of 'from' in a cyclic manner
+   * 
+   * Notice that when !existsPred(from+1), then also !existsPred(from+2), etc.,
+   * so we we're in the last existing value
+   * 
+   * Notice also that we also may pass through from=EMPTY, or from=to
+   * 
+   */
+   
+  
+  incrementFrom :=
+    ( ((from != 5) & existsPred(from+1)) -> next(from) = from+1) &
+    (!((from != 5) & existsPred(from+1)) -> next(from) = 0) ;
+
+
+
+/*
+ * 
+ * 
+ * ------------------- GATHER REDS TASK ------------------
+ * 
+ * 
+ */
+
+
+asm continueGatherUntilDone:
+  G (task = GATHER_REDS & !gatherRedsDone) -> next(task) = GATHER_REDS;
+
+
+gar
+  GF (task = GATHER_REDS & gatherRedsAsms) -> gatherRedsDone;
+
+gar
+  G (task = GATHER_REDS & gatherRedsDone) -> !isMoving;
+  
+
+
+define
+  //gathering the red balls to the start (if some ball is red, then so is its successor, and so on)
+  gatherRedsDone :=
+    ((s5 = RED) -> (s4 = RED)) &
+    ((s4 = RED) -> (s3 = RED)) &
+    ((s3 = RED) -> (s2 = RED)) &
+    ((s2 = RED) -> (s1 = RED)) &
+    ((s1 = RED) -> (s0 = RED)) ;
+
+  gatherRedsAsms :=
+    somethingEmpty & firstStationsExist;
+    
+/*
+ * 
+ * 
+ * 
+ * 
+ * ----------------------- MOVE_RED_LEFT TASK ----------------------
+ * 
+ * 
+ * 
+ * 
+ * 
+ */
+ 
+
+asm continueMoveRedUntilDone:
+  G (task = MOVE_RED_LEFT & !moveRedLeftDone) -> next(task) = MOVE_RED_LEFT;
+   
+gar
+  GF (task = MOVE_RED_LEFT & moveRedLeftAsms) -> moveRedLeftDone;
+
+gar
+  G (task = MOVE_RED_LEFT & moveRedLeftDone) -> !isMoving;
+     
+
+predicate prevBallsNotEmpty(Int(0..5) index):
+  ((index >= 1) -> (s0 != EMPTY)) &
+  ((index >= 2) -> (s1 != EMPTY)) &
+  ((index >= 3) -> (s2 != EMPTY)) &
+  ((index >= 4) -> (s3 != EMPTY)) &
+  ((index >= 5) -> (s4 != EMPTY)) ;
+  
+  
+define
+    moveRedLeftDone :=
+      ((s0 = RED) -> prevBallsNotEmpty(0)) &
+      ((s1 = RED) -> prevBallsNotEmpty(1)) &
+      ((s2 = RED) -> prevBallsNotEmpty(2)) &
+      ((s3 = RED) -> prevBallsNotEmpty(3)) &
+      ((s4 = RED) -> prevBallsNotEmpty(4)) &
+      ((s5 = RED) -> prevBallsNotEmpty(5)) ;
+    
+    moveRedLeftAsms :=
+      true;
+    
+      
+      
+
+      
+/*
+ * 
+ * 
+ * 
+ * 
+ * 
+ * ------------------- SWAP_RED_AND_BLUE TASK ----------------
+ * 
+ * 
+ * 
+ */
+ 
+// swapping 'from' from red to blue and vice versa yields swapping the red and the blue again and again  
+gar
+  G (swapRedAndBlueAsms & task = SWAP_RED_AND_BLUE) ->
+      ((fromColor = RED -> next(fromColor) = BLUE) &
+      (fromColor = BLUE -> next(fromColor) = RED));
+
+predicate colorExists(Color color):
+  s0 = color |
+  s1 = color |
+  s2 = color |
+  s3 = color |
+  s4 = color |
+  s5 = color ;
+  
+define
+  swapRedAndBlueAsms :=
+    colorExists(BLUE) &
+    colorExists(RED); 
+  
+     
+/*
+ * 
+ * 
+ * 
+ * EXTRA ASSUMPTIONS
+ * 
+ * 
+ * 
+ */
+
+
+
+
+define
+   extraAssumptions :=
+//      (s0 = BLUE | s0 = RED) &
+//      (s1 = BLUE | s1 = RED) &
+//      (s2 = BLUE | s2 = RED) &
+//      (s3  = EMPTY) &
+      (s4  = NOT)   &
+      (s5  = NOT);
+
+
+
+predicate isColor(Color color):
+  color != EMPTY & color != NOT;
+  
+define
+  strongAssumptions :=
+//    s0 = EMPTY &
+//    s1 = RED &
+//    s2 = BLUE &
+    isColor(s0) &
+    isColor(s1) &
+    isColor(s2) &
+    s3 = EMPTY &
+    s4 = NOT &
+    s5 = NOT;
+
+  
+//aux boolean second;
+//gar !second;
+//gar G next(second);
+//asm G second -> next(task) = task;
+//asm G next(task) = SORT;
+
+
+asm strongAssumptions;  
+asm G task = SCAN -> next(strongAssumptions);
+
+
+
+
+//asm G next(task) = SORT;
+//asm G next(task) = task | nextTask;
+
+
+define
+
+//  nextTask :=
+//    (task = SCAN   -> next(task) = SORT) &
+//    (task = SORT   -> next(task) = SCAN) ;
+
+  
+//  nextTask :=
+//    (task = SCAN   -> next(task) = SORT) &
+//    (task = SORT   -> next(task) = HANOI) &
+//    (task = HANOI  -> next(task) = SCAN);
+    
+    
+    
+  nextTask :=
+    (task = SCAN              -> next(task) = SORT) &
+    (task = SORT              -> next(task) = EXCHANGE) &
+    (task = EXCHANGE          -> next(task) = SWAP_RED_AND_BLUE) &
+    (task = SWAP_RED_AND_BLUE -> next(task) = MOVE_RED_LEFT) &
+    (task = MOVE_RED_LEFT     -> next(task) = GATHER_REDS) &
+    (task = GATHER_REDS       -> next(task) = HANOI) &
+    (task = HANOI             -> next(task) = SCAN);
+
+
+
+    
+//asm G next(task) = SORT;
+
+
+define
+  someColorExists :=
+    s0 = RED | s0 = GREEN | s0 = BLUE |
+    s1 = RED | s1 = GREEN | s1 = BLUE | 
+    s2 = RED | s2 = GREEN | s2 = BLUE |
+    s3 = RED | s3 = GREEN | s3 = BLUE |
+    s4 = RED | s4 = GREEN | s4 = BLUE |
+    s5 = RED | s5 = GREEN | s5 = BLUE ;
+    
+  movingAsms :=
+    colorExists(EMPTY) & 
+    someColorExists;
+    
+
+    
+asm movingAsms;
+asm G next(movingAsms);
+
+asm G next(task) = GATHER_REDS;
+
+//gar G !sortDone -> next(isMoving);
+//gar G task = SCAN -> next(from = 1 & to = 0);
+//gar G task = SCAN -> next(from) = 1 & next(to) = 0;
+//gar G task = SCAN -> next(isMoving);
+
+//asm G next(task) = SCAN;

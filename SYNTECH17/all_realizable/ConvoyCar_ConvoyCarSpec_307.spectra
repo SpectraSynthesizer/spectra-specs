@@ -1,0 +1,111 @@
+/*
+ * - removed some redundant assumptions
+ * - named all guarantees/assumptions, and made some cosmetic changes
+ *    (to make the spec more readable)
+ * 
+ */
+ 
+ // lane setup:
+ // right side of lane should be BLACK
+ // left side of lane should be WHITE
+import "../patterns/DwyerPatterns.spectra"
+  
+module ConvoyCarSpec     
+     
+env Int(0..10) sense;
+env Int(0..1) rightColor;
+env Int(0..1) leftColor;
+sys Int(0..4) mLeft;
+sys Int(0..4) mRight;
+sys Int(0..1) beep;
+
+aux boolean accelerating;
+aux boolean slowingDown;
+
+define
+
+  // DRIVE STATE
+  stopping := mLeft = 0 & mRight = 0;
+  turningLeft := mLeft < mRight;
+  turningRight := mLeft > mRight;
+  turning := turningLeft | turningRight;
+  accelLeft := (next(mLeft) > mLeft) | (mLeft = 4 & next(mLeft)=4);
+  accelRight := (next(mRight) > mRight) | (mRight = 4 & next(mRight)=4); 
+  slowDownLeft := (mLeft = 0 & next(mLeft)=0) | (mLeft > next(mLeft));
+  slowDownRight := (mRight = 0 & next(mRight)=0) | (mRight > next(mRight));
+  
+  // LANE CONTROL
+  white := 1;
+  black := 0;
+  inLane := ((rightColor = black) & (leftColor = white));
+  reversedLane := ((rightColor = white) & (leftColor = black));
+  devLeft := ((leftColor = white & rightColor = white));
+  devRight := ((rightColor = black & leftColor = black));
+
+  // DISTANCE CONTROL
+  minDist := 0;
+  maxDist := 10;
+  inRange := (minDist < sense) & (sense < maxDist);
+  tooClose := sense <= minDist;
+  laneClear := sense >= maxDist;
+  nextCarCloser := inRange & (lastDist > sense);
+  nextCarFarther := inRange & (lastDist < sense);
+
+monitor Int(0..10) lastDist{
+  lastDist = sense;
+  G next(lastDist) = sense;
+}
+
+guarantee initiallyStopping:
+  stopping;
+
+guarantee beepWhenMoving:
+  G (!stopping <-> beep = 1);
+  
+guarantee accel:
+  G (accelerating -> (accelLeft | accelRight));
+  
+guarantee slowDown:
+  G (slowingDown -> (slowDownLeft | slowDownRight));
+
+guarantee smoothnessLeft:
+  G ((-1 <= next(mLeft) - mLeft) & (next(mLeft) - mLeft <= 1));
+guarantee smoothnessRight:
+  G ((-1 <= next(mRight) - mRight) & (next(mRight) - mRight <= 1));
+  
+guarantee accelerateIfClear:
+  G (laneClear -> accelerating);
+
+guarantee slowDownInRange:
+  G (nextCarCloser -> slowingDown);
+
+guarantee accelInRange:
+  G (nextCarFarther -> accelerating);
+
+guarantee slowDownIfTooClose:
+  G (tooClose -> slowingDown);
+
+guarantee convoy:
+  GF (inRange | laneClear);
+
+guarantee stayInLane:
+  GF (inLane);
+ 
+guarantee advance:
+  GF (!stopping);
+
+guarantee
+  G (inLane -> !next(turning));
+  
+assumption caFixRightDeviation:
+  G (pRespondsToS((devRight & turningLeft), (inLane | !turningLeft)));
+
+assumption canFixLeftDeviation:
+  G (pRespondsToS((devLeft & turningRight), (inLane | !turningRight)));
+  
+assumption canFixReversedLane:
+  G (pRespondsToS((reversedLane & turningRight), (inLane | !turningRight)));  
+
+assumption laneClearEventually:
+  G (pRespondsToS(stopping, laneClear));
+

@@ -1,0 +1,110 @@
+/*
+ * Auto-generated Spectra file
+ */
+ //
+ // lane setup:
+ // right side of lane should be BLACK
+ // left side of lane should be WHITE
+import "../patterns/DwyerPatterns.spectra"
+  
+module ConvoyCarSpec     
+     
+env Int(0..10) sense;
+env Int(0..1) rightColor;
+env Int(0..1) leftColor;
+sys Int(0..4) mLeft;
+sys Int(0..4) mRight;
+sys Int(0..1) beep;
+
+aux boolean accelerating;
+aux boolean slowingDown;
+
+define
+  stopping := mLeft = 0 & mRight = 0;
+
+  turningLeft := mLeft < mRight;
+  turningRight := mLeft > mRight;
+  turning := turningLeft | turningRight;
+  //LANE "enum":
+  white := 1;
+  black := 0;
+  inLane := (rightColor = black) & (leftColor = white);
+
+  minDist := 0;
+  maxDist := 10;
+  inRange := (minDist < sense) & (sense < maxDist);
+  tooClose := sense <= minDist;
+  farFromNextCar := sense >= maxDist;
+
+
+  accelLeft := (next(mLeft) - mLeft = 1) | (mLeft = 4 & next(mLeft)=4);
+  accelRight := (next(mRight) - mRight = 1) | (mRight = 4 & next(mRight)=4); 
+  slowDownLeft := (mLeft = 0 & next(mLeft)=0) | (mLeft - next(mLeft) = 1);
+  slowDownRight := (mRight = 0 & next(mRight)=0) | (mRight - next(mRight) = 1);
+
+guarantee beeping:
+  G (!stopping <-> beep = 1);
+guarantee initialization:
+  stopping; //& !accelerating & !slowingDown;
+  
+guarantee accel:
+  G (accelerating <-> (accelLeft | accelRight));
+  
+guarantee slowDown:
+  G (slowingDown -> (slowDownLeft | slowDownRight));
+
+guarantee smoothnessLeft:
+  G ((-1 <= next(mLeft) - mLeft) & (next(mLeft) - mLeft <= 1));
+guarantee smoothnessRight:
+  G ((-1 <= next(mRight) - mRight) & (next(mRight) - mRight <= 1));
+  
+monitor Int(0..10) lastDist{
+  lastDist = sense;
+  G next(lastDist) = sense;
+}
+
+guarantee accelerateIfClear:
+  G ((farFromNextCar & inLane) -> (accelerating));
+
+guarantee
+  G ((inRange & (lastDist > sense) & inLane) -> (slowingDown));
+
+guarantee
+  G ((inRange & (lastDist < sense) & inLane) -> (accelerating));
+
+guarantee
+  G (tooClose -> (slowingDown));
+
+guarantee convoy:
+  GF (inRange | farFromNextCar | (tooClose & stopping));
+
+guarantee fixLaneRight:
+  G (pHolds_afterQuntilR(next(turningRight | tooClose), (rightColor = white), inLane));
+
+guarantee fixLaneLeft:
+  G (pHolds_afterQuntilR(next(turningLeft | tooClose), (leftColor = black), inLane));
+
+guarantee
+  G (inLane -> !next(turning));
+  
+assumption laneNotReversed:
+  G !((rightColor = white) & (leftColor = black));
+  
+assumption inLaneBetweenLeftDevAndRightDev:
+  G (pBecomesTrue_betweenQandR(inLane, rightColor = white, leftColor = black));
+
+assumption inLaneBetweenRightDevAndLeftDev:
+  G (pBecomesTrue_betweenQandR(inLane, leftColor = black, rightColor = white));
+    
+assumption
+  G (inRange -> (!farFromNextCar & !tooClose));
+assumption
+  G (tooClose -> !farFromNextCar & !inRange);
+assumption
+  G (farFromNextCar -> !inRange & !tooClose);
+
+assumption laneClearEventually:
+  pRespondsToS(stopping, farFromNextCar);
+
+assumption initiallyInLane:
+  inLane;

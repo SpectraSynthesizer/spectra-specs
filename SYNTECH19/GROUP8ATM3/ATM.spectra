@@ -1,0 +1,187 @@
+import "./patterns/DwyerPatterns.spectra"
+/*
+ * 1. Timeout on logout has been fixed - now there can be timeout after user has didn't take his card out
+ * after timeout occurred, while user is not taking card out the next state will still be on
+ * 'waitAfterCardTimeout'=TRUE state.
+ * 2. There is now monitor for 'waitAfterCardTimeout' which will be true as long as card is waiting to
+ * be taken out after logoutTimeout
+ * 3. There is 'envCardTimeout' variable which is triggered when there is logout timeout - 
+ * which can be triggered only after timeOut has reached.
+ * 4. We used asm pRespondsToS(waitAfterCardTimeout,!cardInserted); 
+ * in order to make sure user will eventually take his card out after timeout in logout occurres.
+ */
+module ATM			
+
+type Operation = {LOGIN,TRANSFER ,DEPOSIT, WITHDRAW, BALANCE, LOGOUT, NONE,TIMEOUT};
+type Response = {YES, NO, NO_CONNECTION};
+type RequestStatus = {APPROVED, REJECTED, CONNECTION_ERROR, NONE};
+type timerStatus = {START,STOP,NONE};
+type declineReason = {NO_MONEY,WRONG_ACCOUNT,WRONG_PASSWORD,MAX_AMOUNT,NONE};
+
+define
+	noneRequest := userRequest = NONE;
+	logoutRequest := userRequest = LOGOUT;
+	loginRequest := userRequest = LOGIN;
+	balanceRequest := userRequest = BALANCE;
+	depositRequest := userRequest = DEPOSIT;
+	withdrawRequest := userRequest = WITHDRAW;
+	transferRequest := userRequest = TRANSFER;
+	timeOut := userRequest = TIMEOUT;
+	
+	userTransactionReq := depositRequest | withdrawRequest | balanceRequest | transferRequest;
+	
+	noBankResponse := bankResponse = NO_CONNECTION;
+	bankApproved := bankResponse = YES;
+	bankRejected := bankResponse = NO;
+	
+	statusApproved := requestStatus = APPROVED;
+	statusRejected := requestStatus = REJECTED;
+	statusErr := requestStatus = CONNECTION_ERROR;
+	statusNone := requestStatus = NONE;
+	
+	startTimerOp := timerOps = START;
+	stopTimerOp := timerOps = STOP;
+	noTimerOp := timerOps = NONE;
+	
+	startTimerCard := timerCard = START;
+	stopTimerCard := timerCard = STOP;
+	
+	wrongAccount := transactionDecline = WRONG_ACCOUNT;
+	noMoney := transactionDecline = NO_MONEY;
+	wrongPassword := transactionDecline = WRONG_PASSWORD;
+    maxAmount := transactionDecline = MAX_AMOUNT;
+	noDecline := transactionDecline = NONE;
+	
+	
+ 
+-------environment variables
+//user
+env boolean cardInserted;
+env Operation userRequest;
+env boolean envCardTimeout;
+
+//Bank
+env Response bankResponse;
+env declineReason transactionDecline;
+
+-------system variables
+//wait for bank response to valid login request
+sys boolean waitBankLoginResponse; 
+//wait for bank response to valid transaction request(deposit,withdraw,balance)
+sys boolean waitBankTransactionResponse; 
+//current status of valid request from the previous state
+sys RequestStatus requestStatus;
+//reached maximum number of login attempts
+sys boolean reachedMaxFailes;
+//current status of timer for user transactions
+sys timerStatus timerOps;
+//current status of timer for taking out the card
+sys timerStatus timerCard;
+// is the ATM in logout mode
+sys boolean logoutSystem;
+// current processed operation
+sys Operation currentOperation;
+
+
+-------assumptions
+//initial
+asm !cardInserted & noneRequest & noBankResponse & noDecline & !envCardTimeout;
+
+// infinitely often, card will be inserted or the system in logout mode
+asm GF cardInserted | logoutSystem;
+//after there is card timeout, the user will take out the card
+//within a finite number of computation steps
+asm pRespondsToS(waitAfterCardTimeout,!cardInserted);
+// if card is not inserted there is no user request
+asm G ((!cardInserted) -> (next(noneRequest)));
+// card is still in if atm is not in logout process and not waiting for card out
+asm G ((cardInserted & !waitAfterCardTimeout & !logoutSystem) -> (next(cardInserted)));
+
+// if no request has been sent to the bank, bank won't answer
+asm G (!waitBankLoginResponse & !waitBankTransactionResponse) -> next(noBankResponse);
+// if we are waiting for bank response or the system is in logout mode
+// or waiting for card out - the user won't send request on the next state
+asm G (waitBankLoginResponse | waitBankTransactionResponse | logoutSystem | waitAfterCardTimeout) -> next(noneRequest);
+// bank can not reject balance request - only approve or not being connected
+asm G ((waitBankTransactionResponse & balanceRequest)) -> next(!bankRejected);
+
+// the reasons for rejecting transfer can be - noMoney/wrongAccount/maxAmount
+asm G ((transferRequest) & (next(bankRejected))) -> next(noMoney | wrongAccount |maxAmount);
+// the reasons for rejecting withdraw can be - noMoney/maxAmount
+asm G ((withdrawRequest) & (next(bankRejected))) -> next(noMoney|maxAmount);
+// the reasons for rejecting login can be - wrongPassword
+asm G ((loginRequest) & (next(bankRejected))) -> next(wrongPassword);
+// the reasons for rejecting deposit can be - maxAmount
+asm G ((depositRequest) & (next(bankRejected))) -> next(maxAmount);
+// in case bank is not rejecting - there id no decline reason
+asm G (next(bankApproved) | next(noBankResponse)) -> next(noDecline);
+
+//card timeout can be only after timer has started
+asm G (!startTimerCard) -> next(!envCardTimeout);
+// after logout mode - there is card timeout *iff* the user didn't take out his card
+asm G (logoutSystem) -> next((envCardTimeout = cardInserted));
+
+
+
+-------guarantees
+//initial
+gar !waitBankLoginResponse & !waitBankTransactionResponse & statusNone & currentOperation=NONE;
+
+//waiting bank response
+gar G (loginRequest & cardInserted & !userLoggedIn) <-> waitBankLoginResponse;
+gar G (userTransactionReq & userLoggedIn) <-> waitBankTransactionResponse;
+
+//update user request status according to bank response
+gar G (waitBankTransactionResponse | waitBankLoginResponse) & next(bankApproved) <-> next(statusApproved);
+gar G (waitBankTransactionResponse | waitBankLoginResponse) & next(bankRejected) <-> next(statusRejected);
+gar G (waitBankTransactionResponse | waitBankLoginResponse) & next(noBankResponse) <-> next(statusErr);
+gar G (!waitBankLoginResponse & !waitBankTransactionResponse) <-> next(statusNone);
+
+// if the login was rejected in the 3rd attempt - urser reached max attempts
+gar G (((loginAttempts >= 2) & statusRejected) <-> reachedMaxFailes);
+
+//Manage User Operations timer
+gar G userTransactionReq | loginRequest | logoutSystem -> stopTimerOp; //user request/logout system -> stop timer
+gar G ((!statusNone) & (!reachedMaxFailes)) -> (startTimerOp); // user request finished -> start new timer(for next request)
+gar G !cardInserted & next(cardInserted) -> next(startTimerOp); // start timer after card insertion
+gar GF startTimerOp | stopTimerOp;
+gar G !cardInserted | waitAfterCardTimeout -> noTimerOp;
+
+//Manage card timer
+gar G logoutSystem <-> startTimerCard;
+gar G startTimerCard & next(!cardInserted) <-> next(stopTimerCard);
+
+// timeout/max attempts/logout request -> system is logging out
+gar G reachedMaxFailes | timeOut | logoutRequest <-> logoutSystem;
+
+// save user request for the next state
+gar G next(currentOperation) = userRequest;
+
+
+//login status
+monitor boolean userLoggedIn {
+	!userLoggedIn;
+	G next(userLoggedIn) = 
+	((userLoggedIn & !logoutSystem) | (statusApproved & !userLoggedIn)
+	);
+}
+
+
+//wait card out after card timeout
+monitor boolean waitAfterCardTimeout {
+	!waitAfterCardTimeout;
+	G next(waitAfterCardTimeout) = 
+	((waitAfterCardTimeout & next(cardInserted)) | (next(envCardTimeout))
+	);
+}
+
+
+counter loginAttempts(0..2) {
+// initially loginAttempts is set to zero
+loginAttempts=0;
+// increment every time that pin was incorrectly inserted
+inc:((!userLoggedIn) & (statusRejected));
+// reset if logged into the system or logout
+reset:(!cardInserted)|userLoggedIn;
+overflow:keep;
+}

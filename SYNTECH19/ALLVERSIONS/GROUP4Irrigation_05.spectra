@@ -1,0 +1,177 @@
+/*
+ * Auto-generated Spectra file
+ */
+ 
+import "./patterns/DwyerPatterns.spectra"
+ 
+module IrrigationSystem			
+
+
+/*******************/
+/***** DEFINES *****/
+/*******************/	
+define minBoundDiff := 2; //2 IS THE MINIMUM DIFF BETWEEN BOUNDS.
+define isBelowRange := (moistureLevel < lowerBound);
+define isAboveRange := (moistureLevel > upperBound);
+
+define effectiveFlow := irrigationFlow + rainPower; 
+define temperatureDecEffect := temperature + 1;
+
+define nextIsNight := (((hour >= 21) & (hour <= 23)) | ((hour >= 0) & (hour <= 4)));
+
+
+/****************************/
+/***** SYSTEM VARIABLES *****/
+/****************************/
+sys Int (0..6) irrigationFlow; //flow provided by the irrigation system
+sys boolean deviationAlert;
+
+/*********************************/
+/***** ENVIRONMENT VARIABLES *****/
+/*********************************/
+//irrigation mode (SWITCHES)
+env Int (0..2) mode; //0 - for automatic, 1 - for manual, 2 - for scheduled
+env Int (0..6) manualModeUserFlow;
+
+//SENSORS
+env Int (0..3) rainPower;
+
+env Int(0..23) hour;
+
+env Int (0..15) moistureLevel;
+
+env Int (0..2) temperature; // 0 - Cold, 1 - Medium, 2 - Hot
+
+//Bounds of desired moisture level for our plant:
+env Int (0..15) lowerBound; //NOTE: The eclipse shows only some of the starting states, since its number is quite big.
+env Int (0..15) upperBound; //NOTE: The eclipse shows only some of the starting states, since its number is quite big.
+
+//for scheduled mode:
+env boolean [24] schedule_table;
+
+
+/***********************/
+/***** ASSUMPTIONS *****/
+/***********************/
+//temperature assumptions
+asm G nextIsNight -> ((next(temperature) = 0) | (next(temperature) = 1));
+
+//Bounds cannot be changed once chosen by the user.
+asm G (next (upperBound) = upperBound);
+asm G (next (lowerBound) = lowerBound);
+asm (lowerBound < upperBound);
+asm (upperBound - lowerBound) >= minBoundDiff;
+
+
+//hour assumptions
+asm G (hour = 23) -> (next(hour) = 23 | next(hour) = 0);  //keep increasing modulo 24
+asm G (!(hour = 23)) -> ((next(hour) = hour) | (next(hour) = hour+1));
+asm GF (hour != next(hour)); //ensure time is progressing
+ 
+//hour changes at most every 6 states (Java changes the hour after exactly 6 states)
+counter hour_count(0..5) { 
+	hour_count = 0;
+	inc: (hour = next(hour));
+	reset: (hour != next(hour));
+	overflow: false;
+}
+
+
+//moisture assumptions:
+
+//EFFECTIVE FLOW IS 0 OR TEMPERATURE IS NOT HOT - NO EVAPORATION
+asm G (((temperature != 2) | (effectiveFlow = 0)) & (moistureLevel + effectiveFlow - temperatureDecEffect < 0)) ->
+			(next(moistureLevel) = 0); //Avoid no-well separation
+
+asm G (((temperature != 2) | (effectiveFlow = 0)) & (moistureLevel + effectiveFlow - temperatureDecEffect > 15)) ->
+			(next(moistureLevel) = 15); //Avoid no-well separation
+
+asm G (((temperature != 2) | (effectiveFlow = 0)) & (moistureLevel + effectiveFlow - temperatureDecEffect >= 0) & (moistureLevel + effectiveFlow - temperatureDecEffect <= 15)) ->
+			((next(moistureLevel) = moistureLevel + effectiveFlow - temperatureDecEffect) |
+			(next(moistureLevel) = moistureLevel + effectiveFlow - temperatureDecEffect - 1) | //-1 for randomness
+			(next(moistureLevel) = moistureLevel + effectiveFlow - temperatureDecEffect + 1));	//+1 for randomness
+ 
+ 
+//EFFECTIVE FLOW IS GREATER THAN 0 AND TEMPERATUER IS HOT - THERE IS EVAPORATION
+asm G (((temperature = 2) & (effectiveFlow != 0)) & moistureLevel + (effectiveFlow - 1) - temperatureDecEffect < 0) -> (next(moistureLevel) = 0); //Avoid no-well separation.
+asm G (((temperature = 2) & (effectiveFlow != 0)) & moistureLevel + (effectiveFlow - 1) - temperatureDecEffect > 15) -> (next(moistureLevel) = 15); //Avoid no-well separation.
+asm G (((temperature = 2) & (effectiveFlow != 0)) & (moistureLevel + (effectiveFlow - 1) - temperatureDecEffect >= 0) & (moistureLevel + (effectiveFlow  - 1) - temperatureDecEffect <= 15)) ->
+			((next(moistureLevel) = moistureLevel + (effectiveFlow  - 1) - temperatureDecEffect) |
+			(next(moistureLevel) = moistureLevel + (effectiveFlow - 1) - temperatureDecEffect -1 ) | //-1 for randomness
+			(next(moistureLevel) = moistureLevel + (effectiveFlow  - 1) - temperatureDecEffect + 1)); //+1 for randomness
+
+
+/**********************/
+/***** GUARANTEES *****/
+/**********************/
+//AUTOMATIC MODE:
+gar G (((mode = 0) & isAboveRange) -> (irrigationFlow = 0)); //If we are above the range - do not irrigate. (there can be rain)
+gar pRespondsToS(((mode = 0) & isBelowRange), ((mode = 0) -> !deviationAlert)); //If we are below the range, ensures that we will eventually be above minimum range.
+gar G deviationAlert = (isBelowRange | isAboveRange); //Alert in case of deviation.
+
+//MANUAL MODE:
+gar G (mode = 1) -> (irrigationFlow = manualModeUserFlow);
+
+
+//SCHEDULED MODE:
+gar G (mode = 2 & hour = 0 & schedule_table[0]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 0 & !schedule_table[0]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 1 & schedule_table[1]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 1 & !schedule_table[1]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 2 & schedule_table[2]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 2 & !schedule_table[2]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 3 & schedule_table[3]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 3 & !schedule_table[3]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 4 & schedule_table[4]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 4 & !schedule_table[4]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 5 & schedule_table[5]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 5 & !schedule_table[5]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 6 & schedule_table[6]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 6 & !schedule_table[6]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 7 & schedule_table[7]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 7 & !schedule_table[7]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 8 & schedule_table[8]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 8 & !schedule_table[8]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 9 & schedule_table[9]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 9 & !schedule_table[9]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 10 & schedule_table[10]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 10 & !schedule_table[10]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 11 & schedule_table[11]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 11 & !schedule_table[11]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 12 & schedule_table[12]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 12 & !schedule_table[12]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 13 & schedule_table[13]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 13 & !schedule_table[13]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 14 & schedule_table[14]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 14 & !schedule_table[14]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 15 & schedule_table[15]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 15 & !schedule_table[15]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 16 & schedule_table[16]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 16 & !schedule_table[16]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 17 & schedule_table[17]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 17 & !schedule_table[17]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 18 & schedule_table[18]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 18 & !schedule_table[18]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 19 & schedule_table[19]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 19 & !schedule_table[19]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 20 & schedule_table[20]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 20 & !schedule_table[20]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 21 & schedule_table[21]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 21 & !schedule_table[21]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 22 & schedule_table[22]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 22 & !schedule_table[22]) -> (irrigationFlow = 0);
+gar G (mode = 2 & hour = 23 & schedule_table[23]) -> (irrigationFlow = manualModeUserFlow);
+gar G (mode = 2 & hour = 23 & !schedule_table[23]) -> (irrigationFlow = 0);
+
+
+ 
+//DAILY AMOUNT OF WATER USAGE IS RESTRICTED: 
+define maxWaterAmountPerDay := 100;	
+ 
+ sys Int(0..120) DailyWaterAmount;
+ 
+ gar DailyWaterAmount = 0; //initial value is 0
+ gar G (PREV(mode = 0) & (mode = 0) & (!(PREV(hour = 23) & (hour = 0 )))) -> (next(DailyWaterAmount) = DailyWaterAmount + irrigationFlow); //add current amount of water to total daily usage 
+ gar G (PREV(mode = 0) & (mode = 0) & (PREV(hour = 23) & (hour = 0 ))) -> (next(DailyWaterAmount) = 0 + irrigationFlow); //restart, new day! 
+ gar G (PREV(mode != 0) & (mode = 0)) -> (next(DailyWaterAmount) = 0 + irrigationFlow); //restart, back to automatic mode!
+ gar G (mode = 0) -> (DailyWaterAmount <= maxWaterAmountPerDay);

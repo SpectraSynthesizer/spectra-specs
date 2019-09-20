@@ -1,0 +1,163 @@
+module ControllerSpec
+
+    env { CLEAR, BLOCKED } cargo ;
+    env { CLEAR, BLOCKED } sense ;
+    env boolean station ;
+    env boolean emgOff ;
+    env boolean liftAck ;
+
+    sys { FWD, STOP, BWD } mLeft ;
+    sys { FWD, STOP, BWD } mRight ;
+    sys { LIFT, DROP, NIL } lift ;
+
+    sys boolean spec_loaded ;
+    sys boolean spec_loadedLeftStation ;
+  
+    env boolean spec_waitingForLifting ;
+
+  define
+    backing := mLeft = BWD & mRight = BWD;
+    stopping := mLeft = STOP & mRight = STOP;
+    turning := mLeft = BWD & mRight = FWD | mLeft = FWD & mRight = BWD;
+    forwarding := mLeft = FWD & mRight = FWD;
+    
+    dropping := lift = DROP;
+    lifting := lift = LIFT;
+    
+    lowObstacle := (cargo = BLOCKED & !station);
+
+  // Environment Specification
+  /////////////////////////////////////
+
+  // A1 find cargo if going forward to next station
+  assumption
+  respondsTo((forwarding&!spec_loaded),((station&cargo=BLOCKED)|backing|stopping));
+  assumption
+  respondsTo((forwarding&spec_loaded),((station&cargo=CLEAR)|backing|stopping));
+
+  // A2 leave station eventually
+  assumption
+  respondsTo((forwarding),(!station|stopping));
+  assumption
+  respondsTo((backing),(!station|stopping));
+    
+  // FIXME: the four specs above should also have turning 
+  // because we might drive in circles
+  // BUT this gives a strategy to the environment to present obstacles 
+  // release itself from having to reach a station 
+    
+  // unblock path if backing or turning
+  assumption
+  respondsTo((backing|turning),((sense=CLEAR&cargo=CLEAR)|forwarding|stopping));
+
+  // station does not change when stopping
+  assumption
+    G (stopping -> station = next(station));
+  
+  
+  assumption
+    !spec_waitingForLifting & !liftAck;
+  
+  assumption
+    G ((lift=LIFT | lift=DROP) -> next(spec_waitingForLifting));
+  assumption
+    G (liftAck -> ((lift=LIFT | lift=DROP) | next(!spec_waitingForLifting)));
+  assumption
+    G (!((lift=LIFT | lift=DROP) | liftAck) -> spec_waitingForLifting = next(spec_waitingForLifting));
+  
+    
+  assumption
+  respondsTo(spec_waitingForLifting,liftAck);
+    
+  // no strange lifting acks
+  assumption
+    G (liftAck -> spec_waitingForLifting);
+
+      
+  // System Specification
+  ///////////////////////////////////////
+
+  // initial state
+  guarantee
+    stopping & lift = NIL & !spec_loaded & !spec_loadedLeftStation;
+    
+  guarantee
+    G (spec_waitingForLifting -> stopping);
+    
+  // local var spec_loaded 
+  //////////////////////////////////////
+  guarantee
+    G (liftAck & !spec_loaded -> next(spec_loaded));
+  guarantee
+    G (liftAck & spec_loaded -> next(!spec_loaded));
+  guarantee
+    G (!liftAck ->  spec_loaded = next(spec_loaded));
+    
+ 
+  guarantee 
+    G (spec_waitingForLifting -> lift=NIL);
+ 
+  // G3 restricting lifting action based on var spec_loaded
+  guarantee
+    G (spec_loaded -> !lifting);
+
+  guarantee
+    G (!spec_loaded -> !dropping);
+  ////////////////////////////////////////
+
+  // local var spec_loadedLeftStation
+  // remembers whether we have loaded and 
+  // already left source station
+  ////////////////////////////////////////
+  guarantee
+    G (lifting -> !next(spec_loadedLeftStation));
+  guarantee
+    G ((spec_loaded & !station) -> next(spec_loadedLeftStation));
+  guarantee
+    G (!(lifting | (spec_loaded & !station)) -> next(spec_loadedLeftStation) = spec_loadedLeftStation);
+
+  // don't drop at same station
+  guarantee
+    G (!spec_loadedLeftStation -> !dropping);
+  ////////////////////////////////////////
+  
+    // G1 dont run into obstacles
+  guarantee
+    G ((sense = BLOCKED | lowObstacle) -> ! forwarding);
+    
+  // don't mess with low obstacles
+  guarantee
+    G (cargo=BLOCKED -> ! turning);
+
+  // G2 don't drop or lift if not at a station 
+  guarantee
+    G (!station -> lift = NIL);
+    
+  // don't lift if no cargo found
+  guarantee
+    G (cargo = CLEAR -> !lifting);
+    
+  // don't move while lifting or dropping
+  guarantee
+    G (lift != NIL -> stopping);
+
+  guarantee // do nothing if stopped
+    G (emgOff -> (stopping & lift=NIL)); 
+
+  // only turn, go, stop or back
+  guarantee
+    G (forwarding | turning | stopping | backing);
+    
+  // liveness of system
+  ///////////////////////////////////////
+
+  //G4
+  guarantee
+  GF ((lift=DROP)|emgOff|lowObstacle);
+  
+pattern respondsTo(trigger, response) {
+  var boolean responded;
+  responded;
+  G (next(responded) iff (response or responded and !trigger));
+  GF (responded);
+}

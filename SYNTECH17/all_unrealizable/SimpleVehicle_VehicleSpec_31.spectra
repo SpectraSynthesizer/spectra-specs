@@ -1,0 +1,96 @@
+---
+import "../patterns/DwyerPatterns.spectra"
+module VehicleSpec			
+
+env Distance sense;
+env Distance parking;
+env ParkingSpotStatus status; 
+env ParkingType parkingTypeFound; 
+env boolean color;
+env boolean emgOff;
+
+sys MotorCmd driveMotor;
+sys SenseMotorCmd senseMotor; 
+sys Int(0..90) steeringMotor; 
+sys Int(1..5) velocity;
+sys ParkingType parkingMode;
+
+type SenseMotorCmd = {DRIVE, REVERSE};
+type MotorCmd = {FWD, STOP, BWD};
+type Distance = {BLOCKED, CLOSE, MEDIUM, FAR, VERY_FAR, CLEAR};
+type ParkingSpotStatus = {STARTED_SCANNING, FINISHED_SCANNING, NONE};
+type ParkingType = {PARALLEL, REVERSED, NONE};
+
+define
+  stopping := driveMotor = STOP ;
+  forwarding := driveMotor = FWD & steeringMotor = 5  & senseMotor = DRIVE;
+  leftTurning := steeringMotor < 45& driveMotor != STOP;
+  rightTurning := steeringMotor > 45  & driveMotor != STOP;  
+  reversing := senseMotor = REVERSE & driveMotor = BWD;
+  reverseParking := (senseMotor = REVERSE & sense = CLOSE & parking = BLOCKED) -> (driveMotor = STOP & steeringMotor = 45);
+  parallelParking := parking = BLOCKED -> (driveMotor = STOP & steeringMotor = 45);
+  foundAParallelSpot := (parkingTypeFound = PARALLEL & status = FINISHED_SCANNING);
+  foundAReverseSpot := (parkingTypeFound = REVERSED & status = FINISHED_SCANNING);
+  scanning := status = STARTED_SCANNING & sense != BLOCKED;
+  
+guarantee initialStop:
+  stopping;
+  
+guarantee initalNotParking:
+  parkingMode = NONE;
+
+guarantee keepScanning:
+  G status = STARTED_SCANNING -> forwarding; //If scanning has begun, keep it up
+  
+guarantee startParkingInParallel:
+  pRespondsToS(foundAParallelSpot, parallelParking);
+
+guarantee startParkingInReverse:
+  pRespondsToS(foundAReverseSpot, reverseParking);
+  
+guarantee dontCrashFront:
+  G (((sense = BLOCKED) & (senseMotor = DRIVE))  -> ! forwarding);
+  
+guarantee dontCrashBack:  
+  G (((sense = BLOCKED) & (senseMotor = REVERSE))  -> ! reversing);
+
+guarantee keepMovingForward:
+  GF forwarding;
+
+//Don't drive forward without the main distance sensor positioned backward
+guarantee eyesOnTheRoad:
+  G forwarding -> senseMotor = DRIVE;
+
+//Don't drive backward without the main distance sensor positioned backward
+guarantee useYourRearviewMirror: 
+  G reversing -> senseMotor = REVERSE;    
+
+guarantee finishedParking:
+  GF reverseParking | parallelParking;  
+
+guarantee speedWhileInReverse:
+  G senseMotor = REVERSE -> velocity = 1;
+
+guarantee speedWhileClear:
+  G sense = CLEAR -> velocity = 5;
+
+guarantee speedWhileVeryFar:
+  G sense = VERY_FAR -> velocity = 4;
+
+guarantee speedWhileFar:
+  G sense = FAR -> velocity = 3;
+
+guarantee speedWhileMedium:
+  G sense = MEDIUM -> velocity = 2;
+
+guarantee speedWhileClose:
+  G sense = CLOSE -> velocity = 1;
+
+assumption canGetClear:
+  pRespondsToS(leftTurning | rightTurning | reversing, sense = CLEAR);
+
+assumption aParkingSpotExists:
+  GF parkingTypeFound = REVERSED | parkingTypeFound = PARALLEL;
+
+assumption notParkedInitially:
+  parkingTypeFound = NONE & status = NONE;

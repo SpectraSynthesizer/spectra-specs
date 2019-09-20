@@ -1,0 +1,461 @@
+import "../patterns/DwyerPatterns.spectra"
+
+module EqualFloorsWithGF
+
+// type definitions
+type DoorsMotorCmd= {CLOSE, STOP,OPEN};
+type LiftMotorCmd= {UP, STOP,DOWN};
+
+
+//inputs
+//env variables indicating calls (from floors).
+env boolean calls0_c;
+env boolean calls1_c;
+env boolean calls2_c;
+env boolean calls3_c;
+env boolean emergency_c;
+env boolean sabbath_c;
+// Signal indicating that 3,5,10 and 20 seconds have passed (since the last
+// activation of the boolean variable 'countTime_c')
+// '1' for 3 seconds, '2' for 5 seconds,  '3' for 10 seconds and '4' for 20 seconds.
+env Int(0..4) secondsState_c; 
+// Those env variables are being connected to the controller, reporting
+// current floor\door state.
+env Int(0..6) floor_c;
+env Int(0..2) doors_c;
+
+
+// System's motors and timer commands
+sys LiftMotorCmd liftM_c;
+sys DoorsMotorCmd doorsM_c;
+sys boolean sound_c;
+sys boolean countTime_c;
+
+
+// type definitions
+type DoorsMotorCmd= {CLOSE, STOP,OPEN};
+type LiftMotorCmd= {UP, STOP,DOWN};
+
+
+
+// no further comments on the spec, as every gar and asm has a symbolic name.
+
+define 
+
+  goingUp                             :=   (liftM_c = UP);
+  goingDown                           :=   (liftM_c = DOWN);
+  stayInPlace                         :=   (liftM_c=STOP);
+  openingDoors                        :=   (doorsM_c = OPEN);
+  closingDoors                        :=   (doorsM_c = CLOSE);
+  keepDoorsState                      :=   (doorsM_c = STOP);
+  doorsAreClosed                      :=   (doors_c = 0);
+  doorsAreOpened                      :=   (doors_c = 1);
+  doorsAreFullyOpened                 :=   (doors_c = 2);  
+  floor0                              :=   (floor_c=0);
+  floor1                              :=   (floor_c=2);
+  floor2                              :=   (floor_c=4);
+  floor3                              :=   (floor_c=6);
+  atFloor                             :=   (floor0|floor1|floor2|floor3); 
+  anyCalls                            :=   (calls0_c | calls1_c | calls2_c | calls3_c);
+  anyMemCalls                         :=   (memCall0 | memCall1 | memCall2 | memCall3);
+  atDesignatedFloor                   :=   (floor0 & memCall0) | (floor1 & memCall1)  | (floor2 & memCall2) | (floor3 & memCall3);
+  firstStateAtDesignatedFloor         :=   atDesignatedFloor&doorsAreClosed&!doorsWereFullyOpened&stayInPlace;
+  fullyOpenedStateAtDesignatedFloor   :=   atDesignatedFloor&doorsAreFullyOpened;
+  lastStateAtDesignatedFloor          :=   atDesignatedFloor&doorsAreClosed&doorsWereFullyOpened;
+  noSeconds                           :=   secondsState_c=0;
+  seconds3                            :=   secondsState_c=1;
+  seconds5                            :=   secondsState_c=2;
+  seconds20                           :=   secondsState_c=4;
+  //onlyDownCalls                       :=   (floor1&(memCall0)&!(memCall1|memCall2|memCall3))|
+  //                                         (floor2&(memCall0|memCall1)&!(memCall2|memCall3));                                        
+  //onlyUpCalls                         :=   (floor1&(memCall2|memCall3)&!(memCall0|memCall1))|
+  //                                         (floor2&(memCall3)&!(memCall0|memCall1|memCall2)); 
+  emergency_state                     :=   (emergency_c|memEmergency);
+  atEmergencyFloor                    :=   (atFloor&emergency_state);
+  fullyOpenedStateAtEmergencyFloor    :=   (atEmergencyFloor&doorsAreFullyOpened);
+  activateMemCall0                    :=   (!sabbathMode&activateMemCall(memCall0,calls0_c,floor0,memEmergency,doorsWereFullyOpened))|
+                                           (sabbathMode & !sabbath_c & !memCall0 & !emergency_c & !memEmergency & (floor3|(floor1&!memCall3)));                                     
+  deActivateMemCall0                  :=   (deActivateMemCall(memCall0,floor0,doorsWereFullyOpened,doorsAreClosed,fullyOpenedStateAtEmergencyFloor));
+  activateMemCall1                    :=   (!sabbathMode&activateMemCall(memCall1,calls1_c,floor1,memEmergency,doorsWereFullyOpened))|
+                                           (sabbathMode & !sabbath_c & !memCall1 & !emergency_c & !memEmergency & (floor0|floor3));                                       
+  deActivateMemCall1                  :=   (deActivateMemCall(memCall1,floor1,doorsWereFullyOpened,doorsAreClosed,fullyOpenedStateAtEmergencyFloor));
+  activateMemCall2                    :=   (!sabbathMode&activateMemCall(memCall2,calls2_c,floor2,memEmergency,doorsWereFullyOpened))|
+                                           (sabbathMode & !sabbath_c & !memCall2 & !emergency_c & !memEmergency & (floor0|floor3));                                        
+  deActivateMemCall2                  :=   (deActivateMemCall(memCall2,floor2,doorsWereFullyOpened,doorsAreClosed,fullyOpenedStateAtEmergencyFloor));
+  activateMemCall3                    :=   (!sabbathMode&activateMemCall(memCall3,calls3_c,floor3,memEmergency,doorsWereFullyOpened))|
+                                           (sabbathMode & !sabbath_c & !memCall3 & !emergency_c & !memEmergency & (floor0|(floor2&!memCall0)));                                          
+  deActivateMemCall3                  :=   (deActivateMemCall(memCall3,floor3,doorsWereFullyOpened,doorsAreClosed,fullyOpenedStateAtEmergencyFloor));
+  activateSabbathMode                 :=   (!sabbathMode & sabbath_c & !emergency_c & !memEmergency);
+  deActivateSabbathMode               :=   (sabbathMode  & (sabbath_c|emergency_c|memEmergency));
+  //emergency_c                         := false;
+  //returnTo0                           := false;
+  //sabbath_c                           := false;
+  
+
+monitor boolean returnTo0
+{  
+  !returnTo0;
+  G (!floor0 & !emergency_c & !memEmergency & ((!anyCalls&!anyMemCalls&seconds20&doorsAreClosed&!sabbathMode) | returnTo0))<->next (returnTo0); 
+}
+
+
+
+
+monitor boolean doorsWereFullyOpened
+{
+  !doorsWereFullyOpened;
+  G (doorsAreFullyOpened->next(doorsWereFullyOpened));
+  G ((doorsAreClosed|(doorsAreOpened&emergency_c))->next(!doorsWereFullyOpened));
+  G ((doorsAreOpened&!emergency_c)->(next(doorsWereFullyOpened)=doorsWereFullyOpened));
+}
+
+
+monitor boolean memEmergency
+{
+  !memEmergency;
+  G (emergency_c & !memEmergency) -> next (memEmergency);
+  G (atFloor&memEmergency&doorsWereFullyOpened&doorsAreClosed) -> next (!memEmergency);
+  G (!(emergency_c & !memEmergency) & !(atFloor&memEmergency&doorsWereFullyOpened&doorsAreClosed)) -> (next(memEmergency) = memEmergency);
+}
+
+
+monitor boolean sabbathMode
+{
+  !sabbathMode;
+  G (activateSabbathMode)->next(sabbathMode);
+  G (deActivateSabbathMode)->next(!sabbathMode);
+  G (!activateSabbathMode&!deActivateSabbathMode)->(next(sabbathMode)=sabbathMode);
+}
+
+
+
+
+monitor boolean memCall0
+{
+  !memCall0;
+  G (activateMemCall0)->next(memCall0);
+  G (deActivateMemCall0)->next(!memCall0);
+  G (!(activateMemCall0)&!deActivateMemCall0) ->  (next(memCall0) = memCall0);
+}
+
+
+monitor boolean memCall1
+{
+  !memCall1;
+  G (activateMemCall1)->next(memCall1);
+  G (deActivateMemCall1)->next(!memCall1);
+  G (!activateMemCall1&!deActivateMemCall1) ->  (next(memCall1) = memCall1);
+}
+
+monitor boolean memCall2
+{
+  !memCall2;
+  G (activateMemCall2)->next(memCall2);
+  G (deActivateMemCall2)->next(!memCall2);
+  G (!activateMemCall2&!deActivateMemCall2) ->  (next(memCall2) = memCall2);
+}
+
+monitor boolean memCall3
+{
+  !memCall3;
+  G (activateMemCall3)->next(memCall3);
+  G (deActivateMemCall3)->next(!memCall3);
+  G (!activateMemCall3&!deActivateMemCall3) ->  (next(memCall3) = memCall3);
+}
+
+
+predicate activateMemCall(boolean memCall,boolean call_c,boolean floor,boolean memEmergency,
+  boolean doorsWereFullyOpened):
+    (call_c & !memCall & !emergency_c & (!memEmergency|(doorsWereFullyOpened&!floor)));
+  
+predicate deActivateMemCall(boolean memCall,boolean floor,
+  boolean doorsWereFullyOpened,boolean doorsAreClosed,boolean fullyOpenedStateAtEmergencyFloor):
+    (memCall & ((floor & doorsWereFullyOpened & doorsAreClosed)|fullyOpenedStateAtEmergencyFloor));
+
+
+
+//INIT GUARANTEES
+gar init_motors:
+  (stayInPlace) & (keepDoorsState);
+
+
+//INIT ASSUMPTIONS
+asm startFromFloor0:
+  floor0;
+  
+asm startWithClosedDoors:
+  doorsAreClosed;
+
+asm timerHasNotBeenActivatedPriorStart: 
+  noSeconds;
+
+
+//SOUND GUARANTEES
+gar noSoundInTheBeginning:
+  !sound_c;
+
+gar soundIsOnWhenMoving: 
+  G !stayInPlace -> next(sound_c);
+
+gar soundIsOffWhenNotMoving:
+  G (stayInPlace) -> (next(!sound_c));
+  
+  
+//Safety Guarantees
+gar ifFloor0DontGoDown:
+  G (floor0 -> (!goingDown));
+
+gar ifFloor3DontGoUp:
+  G (floor3 -> (!goingUp));
+
+gar ifDoorsAreClosedDontClose:
+  G (doorsAreClosed -> (!closingDoors));
+
+gar ifDoorsAreFullyOpenedDontOpen:
+  G (doorsAreFullyOpened->(!openingDoors));
+  
+  
+//Movement Gars
+  
+gar dontChangeDirectionWithoutStopping:
+  G (goingUp -> next (!goingDown)) & (goingDown -> next (!goingUp));  
+  
+gar dontStopGoingUpWithoutAReason:
+  G goingUp->next(goingUp|atDesignatedFloor|floor3|atEmergencyFloor);
+  
+gar dontStopGoingDownWithoutAReason:
+  G goingDown->next(goingDown|atDesignatedFloor|floor0|atEmergencyFloor);
+
+gar dontMoveWithoutAReason:
+  G ((!anyMemCalls & !returnTo0 & !memEmergency) | (returnTo0 & floor0)) -> stayInPlace;
+
+ 
+
+//Doors Movement Gars
+gar dontMoveDoorsWhileMoving:
+  G (!stayInPlace->keepDoorsState);
+
+gar doorsAreClosedWhileMoving:
+  G (!doorsAreClosed)->(stayInPlace);
+
+gar dontMoveDoorsWithoutAReason:
+  G (!atDesignatedFloor&!atEmergencyFloor)->keepDoorsState;
+
+ 
+gar dontStopOpenningDoorsWithoutAReason:
+ G openingDoors->next((stayInPlace&(atDesignatedFloor|atEmergencyFloor)&!doorsAreFullyOpened)->openingDoors);
+  
+gar dontStopClosingDoorsWithoutAReason:
+ G closingDoors->next((stayInPlace&(atDesignatedFloor|atEmergencyFloor)&!doorsAreClosed)->(closingDoors|emergency_c));
+  
+gar byDefaultCloseTheDoors:
+ GF(doorsAreClosed|(atEmergencyFloor&!doorsWereFullyOpened));
+
+  
+//ENVIROMENT'S DESCRIPTION ASSUMPTIONS
+
+asm keepingTheStateOfTheDoors:
+  G (keepDoorsState)->(next(doors_c)=doors_c);
+
+asm moveDoorsOnlyOneStepAtATime:
+  G((doors_c=next(doors_c))|(doors_c+1=next(doors_c))|(doors_c-1=next(doors_c)));
+  
+asm openingDoorsWontDecDoors:
+  G openingDoors->((doors_c=next(doors_c))|(doors_c+1=next(doors_c)));
+
+asm closingDoorsWontIntDoors:
+  G closingDoors->((doors_c=next(doors_c))|(doors_c-1=next(doors_c)));
+ 
+asm openingDoorsWithoutStoppingCauseIncDoors:
+  pRespondsToS(openingDoors&!doorsAreFullyOpened,(next(doors_c)=doors_c+1)|!openingDoors);
+  
+asm closingDoorsWithoutStoppingCauseDecDoors:
+  pRespondsToS(closingDoors&!doorsAreClosed,(next(doors_c)=doors_c-1)|!closingDoors);
+  
+
+asm floorChangeCannotHappenWithoutMoving: 
+  G (stayInPlace)->(next(floor_c)=floor_c);
+    
+asm moveOnlyOneFloorAtATime:
+  G((floor_c=next(floor_c))|(floor_c+1=next(floor_c))|(floor_c-1=next(floor_c)));
+ 
+asm goingUpWontDecFloor:
+  G goingUp->((floor_c=next(floor_c))|(floor_c+1=next(floor_c)));
+
+asm goingDownWontIncFloor:
+  G goingDown->((floor_c=next(floor_c))|(floor_c-1=next(floor_c)));
+  
+
+       
+asm goingUpWithoutStoppingCauseIncFloor:
+  pRespondsToS(goingUp&!floor3,(next(floor_c)=floor_c+1)|!goingUp);
+  
+  
+asm goingDownWithoutStoppingCauseDecFloor:
+  pRespondsToS(goingDown&!floor0,(next(floor_c)=floor_c-1)|!goingDown);
+  
+
+
+
+
+//CLOCK GUARANTEES AND ASSUMPTIONS
+    
+gar startCountTime:
+  G ((!(emergency_c|memEmergency))&(!(!stayInPlace|anyCalls|anyMemCalls|floor0|returnTo0) | 
+                      firstStateAtDesignatedFloor&(!returnTo0) | fullyOpenedStateAtDesignatedFloor))->(countTime_c);
+  
+gar stopCountTime:
+  G ((emergency_c|memEmergency)|(returnTo0)|(!atDesignatedFloor&(floor0|anyCalls|anyMemCalls))|
+                      (!stayInPlace)|(lastStateAtDesignatedFloor)|(doorsAreOpened))->(!countTime_c);
+
+asm envDoesntCountSecondsWhenNotRequired:
+  G (!countTime_c) -> next(noSeconds);
+
+asm countOnlyOneUnitAtATime:
+  G (countTime_c)->((next(secondsState_c)=secondsState_c)|(next(secondsState_c)=secondsState_c+1));
+  
+
+asm takesSomeTimeToCount3SecondsFIXDELAY:
+  G (PREV(!countTime_c))->next(noSeconds);
+
+asm takesSomeTimeToCount5SecondsFIXDELAY:
+  G (PREV(noSeconds))->next(!seconds5);
+
+ 
+asm canCountSecondsWhenRequired:
+    pRespondsToS(countTime_c&(!seconds20),next(secondsState_c)=secondsState_c+1|!countTime_c);
+
+  
+
+//DESIGNATED FLOOR GUARANTEES
+
+gar ifEnteredToDesignatedFloorDontMove:
+  G (!atFloor&next(atDesignatedFloor)&(!returnTo0))->next(stayInPlace);
+
+//Used for 2 cases: 1.if standing in a floor and it calls. 2.if standing in a designated floor don't move.
+gar atDesignatedFloorAndNotMovingThenDontMove:
+  G (atFloor&stayInPlace&next(atDesignatedFloor))->next(stayInPlace);
+
+//Used to make sure that an unfair user won't stuck the elevator at one floor
+gar ifStartedToLeaveFloorKeepGoing:
+  G (atFloor&!stayInPlace)->next(!stayInPlace|atEmergencyFloor);
+
+//gar dontGoUpWhenOnlyCallsFromDown:
+//  G (onlyDownCalls&PREV(stayInPlace))->(!goingUp);//(goingDown|atEmergencyFloor);
+
+//gar dontGoDownWhenOnlyCallsFromUp:
+//  G (onlyUpCalls&PREV(stayInPlace))->(!goingDown);//(goingUp|atEmergencyFloor);
+
+
+gar AtDesignatedFloorDontOpenDoorsUntill3Seconds:
+    G(firstStateAtDesignatedFloor&(noSeconds)&!atEmergencyFloor)->keepDoorsState;
+
+gar AtDesignatedFloorOpenDoorsAfer3Seconds:
+    G(firstStateAtDesignatedFloor&(seconds3)&!atEmergencyFloor)->openingDoors;
+    
+gar AtDesignatedFloorHoldTheDoorsFullyOpenedFor5Seconds:
+    G(fullyOpenedStateAtDesignatedFloor&(noSeconds|seconds3)&!memEmergency&!sabbathMode)->keepDoorsState;
+    
+
+gar AtDesignatedFloorInSabbathModeHoldTheDoorsFullyOpenedFor10Seconds:
+    G(fullyOpenedStateAtDesignatedFloor&(noSeconds|seconds3|seconds5)&!memEmergency&sabbathMode&PREV(keepDoorsState))->(keepDoorsState);
+
+
+//REACH TO DESIGNATED FLOORS
+
+
+gar takeCareOfCallsFromFloor0:
+  GF(!memCall0);
+
+gar takeCareOfCallsFromFloor1:
+  GF(!memCall1);
+  
+gar takeCareOfCallsFromFloor2:
+  GF(!memCall2);
+  
+gar takeCareOfCallsFromFloor3:
+  GF(!memCall3);
+
+
+
+
+//RETURN TO FLOOR0 GUARANTEES AND ASSUMPTIONS
+
+gar returnTo0WhenRequired:
+  G (returnTo0&!floor0)->(goingDown|atEmergencyFloor);
+
+
+
+//EMERGENCY GUARANTEES AND ASSUMPIONS
+
+asm noEmergencyInTheBeginning:
+  !emergency_c;
+
+gar atEmergencyFloorDontMove:
+  G (atEmergencyFloor->stayInPlace);
+
+gar AtEmergencyFloorOpenDoors:
+  G (atEmergencyFloor&!doorsWereFullyOpened&!doorsAreFullyOpened&stayInPlace)->openingDoors;
+ 
+ 
+//SABBATH MODE GUARANTEES AND ASSUMPIONS
+asm noSabbathModeInTheBeginning:
+  !sabbath_c;
+   
+
+
+//PENALTIES
+
+weight notServing: -20
+  true&next(anyMemCalls&!atDesignatedFloor&stayInPlace&!(returnTo0&floor0)&!atEmergencyFloor);  //!returnTo0 for the case of not moving after the returning to 0 and exactly arriving to floor 0.
+                                                                                        //in that case the elevator will stop at floor0 no mater what because it can't change directions                                                                                  //from down to up at once without stopping (other guarantee). 
+
+weight gettingFarFromFloor0: -1
+  memCall0&!floor0&next(goingUp&!emergency_state);
+
+weight gettingFarFromFloor1UP: -1
+  memCall1&(floor_c>2)&next(goingUp&!emergency_state);
+
+
+weight gettingFarFromFloor1DOWN: -1
+  memCall1&(floor_c<2)&next(goingDown&!returnTo0&!emergency_state);
+
+weight gettingFarFromFloor2UP: -1
+  memCall2&(floor_c>4)&next(goingUp&!emergency_state);
+ 
+weight gettingFarFromFloor2DOWN: -1
+  memCall2&(floor_c<4)&next(goingDown&!returnTo0&!emergency_state);
+
+  
+weight gettingFarFromFloor3: -1
+  memCall3&!floor3&next(goingDown&!returnTo0&!emergency_state);
+  
+
+//REWARDS
+
+weight gettingCloseToFloor0: 3
+  memCall0&!floor0&next(goingDown&!returnTo0&!emergency_state);
+
+  
+weight gettingCloseToFloor1UP: 1
+  memCall1&(floor_c<2)&next(goingUp&!emergency_state);
+
+  
+weight gettingCloseToFloor1DOWN: 2
+  memCall1&(floor_c>2)&next(goingDown&!returnTo0&!emergency_state);
+  
+weight gettingCloseToFloor2UP: 2
+  memCall2&(floor_c<4)&next(goingUp&!emergency_state);
+  
+
+weight gettingCloseToFloor2DOWN: 1
+  memCall2&(floor_c>4)&next(goingDown&!emergency_state);
+
+
+weight gettingCloseToFloor3: 3
+  memCall3&!floor3&next(goingUp&!emergency_state);
+
+
+
+
+ 

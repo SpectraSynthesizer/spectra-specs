@@ -1,0 +1,122 @@
+import "./patterns/DwyerPatterns.spectra"
+
+module ATM
+
+--types
+type Operations = {NONE, LOGIN, EXIT, WITHDRAW, BALANCE, DEPOSIT};
+type Inserted = {ENTERED, NOT_ENTERED};
+type Communicate = {USER, BANK};
+type Response = {APPROVED, DENIED, NONE};
+type TimerStatus = {ON, OFF};
+
+-- environment variables
+env Inserted userCard;
+env Inserted userPIN;
+env Operations operationRequest;
+env Response bankResponse;
+env boolean timerDone;
+env boolean loginTimerDone;
+
+-- system variables
+sys Communicate comWith;
+sys TimerStatus timer;
+sys TimerStatus loginTimer;
+
+define
+	cardInserted := userCard = ENTERED;
+	PINInserted := userPIN = ENTERED;
+	bankApproved := bankResponse = APPROVED;
+	bankDenied := bankResponse = DENIED;
+	verify := cardInserted & PINInserted & bankApproved;
+	wrongPIN := cardInserted & PINInserted & !verifiedUser & bankDenied;
+	failedThreeLogin := (countWrongPinNumber = 2) & bankDenied;
+	operationSelected := operationRequest = WITHDRAW | operationRequest = BALANCE | operationRequest = DEPOSIT;
+	askBank := comWith=BANK;
+	askUser := comWith=USER;
+	startTimer := timer=ON;
+	startLoginTimer := loginTimer=ON;
+	anyTimerDone := timerDone | loginTimerDone;
+	startAnyTimer := startLoginTimer | startTimer;
+	
+monitor boolean verifiedUser{
+	!verifiedUser;
+	G next(verifiedUser) = ((verify) | (verifiedUser & operationRequest!=EXIT & !timerDone));
+}
+
+-- ======= INITIAL STATE ======= --
+asm !cardInserted & !PINInserted & bankResponse=NONE & operationRequest=NONE & !anyTimerDone;
+gar askUser & !startAnyTimer;
+
+-- ======= COMMUNICATION ======= --
+--If ATM communicate for bank it will get some response, and none response if not.
+asm G !askBank -> next(bankResponse) = NONE;
+asm G askBank -> next(operationRequest) = NONE & next(bankResponse) != NONE;
+--no need for communication with bank if a user didn't ask for anything
+gar G (operationRequest = NONE | operationRequest = EXIT) -> !askBank;
+
+-- ======= LOGIN PROCESS ======= --
+
+-- PIN insertion can only be after a card was inserted
+asm G (!cardInserted) -> next(!PINInserted) & !PINInserted & operationRequest=NONE & !timerDone;
+-- after inserting card user may enter PIN, ask to remove card or do nothing
+asm G (cardInserted & !PINInserted) -> next(PINInserted & operationRequest=LOGIN) | next(!PINInserted & operationRequest=EXIT) | next(!PINInserted & operationRequest=NONE);
+-- as long as ATM didn't get PIN keep expecting for user response
+gar G (cardInserted & !PINInserted)-> askUser;
+--try and log in
+gar G (cardInserted & PINInserted & operationRequest=LOGIN) -> askBank;
+-- Login is not allowed once the user has already passed login process
+asm G (verifiedUser | bankApproved) -> next(operationRequest) != LOGIN;
+
+-- === BLOCK OPERATION IF LOGIN FAILED OR DIDN'T HAPPEN === --
+-- user can't do any account related request after failed authentication
+asm G !verifiedUser -> next(!operationSelected);
+--user can't request anything as long as he didn't inserted any card
+asm G (!cardInserted) -> next(operationRequest) = NONE;
+
+asm G ((!verifiedUser)&bankApproved) -> next(operationRequest=NONE&!anyTimerDone);
+
+-- ==== COUNTER FOR BAD LOGIN TRIES === --
+counter countWrongPinNumber(0..3) {
+		-- initially no tries
+        countWrongPinNumber = 0;
+		-- user entered wrong pin number
+        inc: wrongPIN;
+		--  reset counter when pin number entered correctly or user logout
+        reset: (verify | operationRequest = EXIT | !cardInserted | loginTimerDone);
+		-- wrong exactly 3 times
+        overflow:keep;
+}
+
+asm G failedThreeLogin -> next(!cardInserted & !PINInserted & !anyTimerDone);
+asm G failedThreeLogin -> next(operationRequest)=NONE;
+gar G failedThreeLogin -> next(askUser & !startAnyTimer);
+
+
+-- ======= EXIT PROCESS ======= --
+--card will be kept inserted until user ask to exit
+asm G (cardInserted & operationRequest != EXIT & !failedThreeLogin & !anyTimerDone ) -> next(cardInserted);
+asm G (PINInserted & operationRequest != EXIT & !failedThreeLogin & !anyTimerDone) -> next(PINInserted);
+
+-- new authentication is needed after exit
+asm G (operationRequest=EXIT| anyTimerDone)->next(operationRequest)=NONE;
+asm G (operationRequest=EXIT| anyTimerDone) -> next(!cardInserted);
+asm G (operationRequest=EXIT| anyTimerDone) -> next(!cardInserted&!PINInserted&!anyTimerDone);
+
+-- ======= WITHDRAW PROCESS ======= --
+gar G (verifiedUser & operationRequest = WITHDRAW) -> askBank;
+
+
+-- ======= CHECK BALANCE PROCESS ======= --
+gar G (verifiedUser & operationRequest = BALANCE) -> askBank;
+
+-- ====== DEPOSIT PROCESS ==== -------
+gar G (verifiedUser & operationRequest = DEPOSIT) -> askBank;
+
+--- ==== (OPERATIONAL) TIMER === -----
+asm G !startTimer | (startTimer & next(operationRequest!=NONE)) -> next(!timerDone);
+gar G verifiedUser&askUser <-> startTimer;
+
+--- ==== LOGIN TIMER === -----
+gar G ((!verifiedUser)&cardInserted&askUser)<->startLoginTimer;
+asm G !startLoginTimer | startLoginTimer & next(operationRequest!=NONE) -> next(!loginTimerDone);
+

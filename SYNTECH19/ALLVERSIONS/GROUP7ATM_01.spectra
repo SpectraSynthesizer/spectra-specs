@@ -1,0 +1,51 @@
+import "./patterns/DwyerPatterns.spectra"
+module ATMinitial	
+
+//Type definitions
+type userActions = { WITHDRAW, DEPOSIT, BALANCE, TRANSFER, NONE };
+
+//Environment controlled input variables
+env boolean cardInserted;
+env boolean pinCorrect;
+env boolean loginAttempt;
+env boolean bankOnline;
+env boolean logout;
+env boolean bankApproved;
+env userActions userAction;
+
+//System controlled output variables 
+sys boolean cardSwallowed;
+sys boolean showBalance;
+sys boolean userActionSucceeded;
+
+// at the initial state no user is occupying the system and no action is being made by user
+asm initialAssumptions:
+		!cardInserted & !loginAttempt & !logout;
+asm G loginAttempt -> next(!loginAttempt) & next(cardInserted);
+asm G loggedIn -> next(cardInserted) & next(!loginAttempt) & next(!pinCorrect);
+asm G !loggedIn -> next(!logout);
+asm G cardSwallowed -> next(!loginAttempt);
+asm GF bankOnline;
+
+//Guarantees
+gar G cardSwallowed = (attempts = 3);
+gar G(((withdrawDepositTransfer & bankOnline & bankApproved & loggedIn)) <-> next(userActionSucceeded));
+gar G(((userAction = BALANCE & bankOnline & loggedIn)) <-> next(showBalance));
+
+monitor boolean loggedIn {
+	!loggedIn;
+	G(((loginAttempt & pinCorrect & bankOnline) | loggedIn) & !logout <-> next(loggedIn));
+}
+
+//Defines
+define withdrawDepositTransfer := (userAction = WITHDRAW) | (userAction = DEPOSIT) | (userAction = TRANSFER);
+
+counter attempts(0..3) {
+// initially set attempts to zero
+attempts=0;
+// increment whenever a wrong pin was entered
+inc:cardInserted & loginAttempt & bankOnline & !pinCorrect;
+// reset if card was taken or logged in successfully 
+reset:!cardInserted | loggedIn;
+overflow:keep;
+}

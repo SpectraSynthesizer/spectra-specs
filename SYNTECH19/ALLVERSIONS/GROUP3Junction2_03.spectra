@@ -1,0 +1,240 @@
+import "./patterns/DwyerPatterns.spectra"
+import "./GROUP3Junction2_03Utils.spectra"
+
+module JunctionModule
+
+
+// *********************************************
+// *** define type of all possible vehicles  ***
+// *********************************************
+
+type Vehicle = {NONE, CAR, EMERGENCY};
+
+
+// ****************************************************************************************
+// *** cars arrays env variables, index 0 - right , index 1 - straight , index 2 - left ***
+// ****************************************************************************************
+
+env Vehicle[3] vehiclesNorth;
+env Vehicle[3] vehiclesSouth;
+env Vehicle[3] vehiclesEast;
+env Vehicle[3] vehiclesWest;
+
+
+// ************************************************************
+// *** pedestrians arrays env variables                     ***
+// *** for south and north: index 0 - west , index 1 - east ***
+// *** for east and west: index 0 - north , index 1 - south ***
+// ************************************************************
+
+env boolean[2] pedestriansNorthPressed;
+env boolean[2] pedestriansSouthPressed;
+env boolean[2] pedestriansEastPressed;
+env boolean[2] pedestriansWestPressed;
+
+
+// ******************************************************************************************
+// *** whenever emergency vehicles are coming they are allowed to cross so the assumption ***
+// *** is that no two emergency vehicles on colliding roads are coming at the same time   ***
+// ******************************************************************************************
+
+asm alw emergencyMultiMutualExclusion(vehiclesNorth[1], vehiclesEast[1], vehiclesWest[1], vehiclesWest[2], vehiclesSouth[2]);
+asm alw emergencyMultiMutualExclusion(vehiclesNorth[2], vehiclesEast[1], vehiclesEast[2], vehiclesWest[2], vehiclesSouth[1]);
+asm alw emergencyMultiMutualExclusion(vehiclesEast[1], vehiclesSouth[1], vehiclesWest[2], vehiclesNorth[1], vehiclesNorth[2]);
+asm alw emergencyMultiMutualExclusion(vehiclesEast[2], vehiclesSouth[1], vehiclesSouth[2], vehiclesWest[1], vehiclesNorth[2]);
+asm alw emergencyMultiMutualExclusion(vehiclesWest[1], vehiclesSouth[1], vehiclesSouth[2], vehiclesEast[2], vehiclesNorth[1]);
+asm alw emergencyMultiMutualExclusion(vehiclesWest[2], vehiclesSouth[2], vehiclesEast[1], vehiclesNorth[1], vehiclesNorth[2]);
+asm alw emergencyMultiMutualExclusion(vehiclesSouth[1], vehiclesWest[1], vehiclesEast[2], vehiclesEast[1], vehiclesNorth[2]);
+asm alw emergencyMultiMutualExclusion(vehiclesSouth[2], vehiclesWest[1], vehiclesWest[2], vehiclesEast[2], vehiclesNorth[1]);
+
+
+// ********************************************************************************************
+// *** whenever vehicles are coming they have to stay there until they are allowed to cross ***
+// ********************************************************************************************
+
+asm G vehiclesNorth[0]!=NONE & !greenNorthVehicles[0] -> next(vehiclesNorth[0])=vehiclesNorth[0];
+asm G vehiclesNorth[1]!=NONE & !greenNorthVehicles[1] -> next(vehiclesNorth[1])=vehiclesNorth[1];
+asm G vehiclesNorth[2]!=NONE & !greenNorthVehicles[2] -> next(vehiclesNorth[2])=vehiclesNorth[2];
+asm G vehiclesSouth[0]!=NONE & !greenSouthVehicles[0] -> next(vehiclesSouth[0])=vehiclesSouth[0];
+asm G vehiclesSouth[1]!=NONE & !greenSouthVehicles[1] -> next(vehiclesSouth[1])=vehiclesSouth[1];
+asm G vehiclesSouth[2]!=NONE & !greenSouthVehicles[2] -> next(vehiclesSouth[2])=vehiclesSouth[2];
+asm G vehiclesEast[0]!=NONE & !greenEastVehicles[0] -> next(vehiclesEast[0])=vehiclesEast[0];
+asm G vehiclesEast[1]!=NONE & !greenEastVehicles[1] -> next(vehiclesEast[1])=vehiclesEast[1];
+asm G vehiclesEast[2]!=NONE & !greenEastVehicles[2] -> next(vehiclesEast[2])=vehiclesEast[2];
+asm G vehiclesWest[0]!=NONE & !greenWestVehicles[0] -> next(vehiclesWest[0])=vehiclesWest[0];
+asm G vehiclesWest[1]!=NONE & !greenWestVehicles[1] -> next(vehiclesWest[1])=vehiclesWest[1];
+asm G vehiclesWest[2]!=NONE & !greenWestVehicles[2] -> next(vehiclesWest[2])=vehiclesWest[2];
+
+
+// ***********************************************************************************************
+// *** whenever pedestrians are coming they have to stay there until they are allowed to cross ***
+// ***********************************************************************************************
+
+asm G pedestriansNorthPressed[0] & !greenNorthPedestrians[0] -> next(pedestriansNorthPressed[0])=true;
+asm G pedestriansNorthPressed[1] & !greenNorthPedestrians[1] -> next(pedestriansNorthPressed[1])=true;
+asm G pedestriansSouthPressed[0] & !greenSouthPedestrians[0] -> next(pedestriansSouthPressed[0])=true;
+asm G pedestriansSouthPressed[1] & !greenSouthPedestrians[1] -> next(pedestriansSouthPressed[1])=true;
+asm G pedestriansEastPressed[0] & !greenEastPedestrians[0] -> next(pedestriansEastPressed[0])=true;
+asm G pedestriansEastPressed[1] & !greenEastPedestrians[1] -> next(pedestriansEastPressed[1])=true;
+asm G pedestriansWestPressed[0] & !greenWestPedestrians[0] -> next(pedestriansWestPressed[0])=true;
+asm G pedestriansWestPressed[1] & !greenWestPedestrians[1] -> next(pedestriansWestPressed[1])=true;
+
+
+// *****************************************************************************************
+// *** in order to prevent starving pedestrians and cars, there must be infinitely often ***
+// *** situations in which there is no emergency vehicle at all or it gets red light     ***
+// *****************************************************************************************
+
+asm GF noEmergency(vehiclesNorth[0],vehiclesNorth[1],vehiclesNorth[2],vehiclesSouth[0],vehiclesSouth[1],vehiclesSouth[2],
+	vehiclesEast[0],vehiclesEast[1],vehiclesEast[2],vehiclesWest[0],vehiclesWest[1],vehiclesWest[2],greenNorthVehicles[0],
+	greenNorthVehicles[1],greenNorthVehicles[2],greenSouthVehicles[0],greenSouthVehicles[1],greenSouthVehicles[2],
+	greenEastVehicles[0],greenEastVehicles[1],greenEastVehicles[2],greenWestVehicles[0],greenWestVehicles[1],greenWestVehicles[2]);
+
+
+// *******************************************************************************************************
+// *** cars traffic lights arrays sys variables, index 0 - right , index 1 - straight , index 2 - left ***
+// *******************************************************************************************************
+
+sys boolean[3] greenNorthVehicles;
+sys boolean[3] greenSouthVehicles;
+sys boolean[3] greenEastVehicles;
+sys boolean[3] greenWestVehicles;
+
+
+// ************************************************************
+// *** pedestrians traffic lights arrays sys variables      ***
+// *** for south and north: index 0 - west , index 1 - east ***
+// *** for east and west: index 0 - north , index 1 - south ***
+// ************************************************************
+
+sys boolean[2] greenNorthPedestrians;
+sys boolean[2] greenSouthPedestrians;
+sys boolean[2] greenEastPedestrians;
+sys boolean[2] greenWestPedestrians;
+
+            
+// ******************************************************************
+// *** in case car is coming, it eventually will get green light ***
+// ******************************************************************
+
+gar pRespondsToS(vehiclesNorth[1]=CAR, greenNorthVehicles[1]);
+gar pRespondsToS(vehiclesNorth[2]=CAR, greenNorthVehicles[2]);
+gar pRespondsToS(vehiclesNorth[0]=CAR, greenNorthVehicles[0]);
+gar pRespondsToS(vehiclesSouth[1]=CAR, greenSouthVehicles[1]);
+gar pRespondsToS(vehiclesSouth[2]=CAR, greenSouthVehicles[2]);
+gar pRespondsToS(vehiclesSouth[0]=CAR, greenSouthVehicles[0]);
+gar pRespondsToS(vehiclesEast[1]=CAR, greenEastVehicles[1]);
+gar pRespondsToS(vehiclesEast[2]=CAR, greenEastVehicles[2]);
+gar pRespondsToS(vehiclesEast[0]=CAR, greenEastVehicles[0]);
+gar pRespondsToS(vehiclesWest[1]=CAR, greenWestVehicles[1]);
+gar pRespondsToS(vehiclesWest[2]=CAR, greenWestVehicles[2]);
+gar pRespondsToS(vehiclesWest[0]=CAR, greenWestVehicles[0]);
+
+
+// ***************************************************************
+// *** in order to give pedestrian that wish to cross the road *** 
+// *** green light, track the pedestrians that are waiting     ***
+// ***************************************************************
+
+monitor boolean pedestrianNorthWestWaiting {
+	!pedestrianNorthWestWaiting;
+	G next(pedestrianNorthWestWaiting)=((pedestriansNorthPressed[0] | pedestrianNorthWestWaiting) & !greenNorthPedestrians[0]);
+}
+
+monitor boolean pedestrianNorthEastWaiting {
+	!pedestrianNorthEastWaiting;
+	G next(pedestrianNorthEastWaiting)=((pedestriansNorthPressed[1] | pedestrianNorthEastWaiting) & !greenNorthPedestrians[1]);
+}
+
+monitor boolean pedestrianSouthWestWaiting {
+	!pedestrianSouthWestWaiting;
+	G next(pedestrianSouthWestWaiting)=((pedestriansSouthPressed[0] | pedestrianSouthWestWaiting) & !greenSouthPedestrians[0]);
+}
+
+monitor boolean pedestrianSouthEastWaiting {
+	!pedestrianSouthEastWaiting;
+	G next(pedestrianSouthEastWaiting)=((pedestriansSouthPressed[1] | pedestrianSouthEastWaiting) & !greenSouthPedestrians[1]);
+}
+
+monitor boolean pedestrianWestNorthWaiting {
+	!pedestrianWestNorthWaiting;
+	G next(pedestrianWestNorthWaiting)=((pedestriansWestPressed[0] | pedestrianWestNorthWaiting) & !greenWestPedestrians[0]);
+}
+
+monitor boolean pedestrianWestSouthWaiting {
+	!pedestrianWestSouthWaiting;
+	G next(pedestrianWestSouthWaiting)=((pedestriansWestPressed[1] | pedestrianWestSouthWaiting) & !greenWestPedestrians[1]);
+}
+
+monitor boolean pedestrianEastNorthWaiting {
+	!pedestrianEastNorthWaiting;
+	G next(pedestrianEastNorthWaiting)=((pedestriansEastPressed[0] | pedestrianEastNorthWaiting) & !greenEastPedestrians[0]);
+}
+
+monitor boolean pedestrianEastSouthWaiting {
+	!pedestrianEastSouthWaiting;
+	G next(pedestrianEastSouthWaiting)=((pedestriansEastPressed[1] | pedestrianEastSouthWaiting) & !greenEastPedestrians[1]);
+}
+
+
+// *******************************************************************
+// *** make sure there are no two colliding roads that get green   *** 
+// *** light at the same time, otherwise a car accident can happen ***
+// *******************************************************************
+
+gar alw multiMutualExclusion(greenNorthVehicles[1], greenEastVehicles[1], greenWestVehicles[1], greenWestVehicles[2], greenSouthVehicles[2]);
+gar alw multiMutualExclusion(greenNorthVehicles[2], greenEastVehicles[1], greenEastVehicles[2], greenWestVehicles[2], greenSouthVehicles[1]);
+gar alw multiMutualExclusion(greenEastVehicles[1], greenSouthVehicles[1], greenWestVehicles[2], greenNorthVehicles[1], greenNorthVehicles[2]);
+gar alw multiMutualExclusion(greenEastVehicles[2], greenSouthVehicles[1], greenSouthVehicles[2], greenWestVehicles[1], greenNorthVehicles[2]);
+gar alw multiMutualExclusion(greenWestVehicles[1], greenSouthVehicles[1], greenSouthVehicles[2], greenEastVehicles[2], greenNorthVehicles[1]);
+gar alw multiMutualExclusion(greenWestVehicles[2], greenSouthVehicles[2], greenEastVehicles[1], greenNorthVehicles[1], greenNorthVehicles[2]);
+gar alw multiMutualExclusion(greenSouthVehicles[1], greenWestVehicles[1], greenEastVehicles[2], greenEastVehicles[1], greenNorthVehicles[2]);
+gar alw multiMutualExclusion(greenSouthVehicles[2], greenWestVehicles[1], greenWestVehicles[2], greenEastVehicles[2], greenNorthVehicles[1]);
+
+
+// *********************************************************************************
+// *** make sure there is no crosswalk light gets green light while the traffic  *** 
+// *** lights on this road get green light, otherwise pedestrians can be injured ***
+// *********************************************************************************
+
+gar alw tripleMutualExclusion(greenNorthPedestrians[0], greenNorthVehicles[1], greenNorthVehicles[2], greenNorthVehicles[0]);
+gar alw tripleMutualExclusion(greenSouthPedestrians[1], greenSouthVehicles[1], greenSouthVehicles[2], greenSouthVehicles[0]);
+gar alw tripleMutualExclusion(greenWestPedestrians[1], greenWestVehicles[1], greenWestVehicles[2], greenWestVehicles[0]);
+gar alw tripleMutualExclusion(greenEastPedestrians[0], greenEastVehicles[1], greenEastVehicles[2], greenEastVehicles[0]);
+gar alw tripleMutualExclusion(greenNorthPedestrians[1], greenSouthVehicles[1], greenWestVehicles[2], greenEastVehicles[0]);
+gar alw tripleMutualExclusion(greenSouthPedestrians[0], greenNorthVehicles[1], greenEastVehicles[2], greenWestVehicles[0]);
+gar alw tripleMutualExclusion(greenWestPedestrians[0], greenEastVehicles[1], greenSouthVehicles[2], greenNorthVehicles[0]);
+gar alw tripleMutualExclusion(greenEastPedestrians[1], greenWestVehicles[1], greenNorthVehicles[2], greenSouthVehicles[0]);
+
+
+// **********************************************************************
+// *** whenever emergency vehicle is coming, let it cross immediately *** 
+// **********************************************************************
+
+gar G vehiclesNorth[1]=EMERGENCY -> greenNorthVehicles[1];
+gar G vehiclesNorth[2]=EMERGENCY -> greenNorthVehicles[2];
+gar G vehiclesNorth[0]=EMERGENCY -> greenNorthVehicles[0];
+gar G vehiclesSouth[1]=EMERGENCY -> greenSouthVehicles[1];
+gar G vehiclesSouth[2]=EMERGENCY -> greenSouthVehicles[2];
+gar G vehiclesSouth[0]=EMERGENCY -> greenSouthVehicles[0];
+gar G vehiclesEast[1]=EMERGENCY -> greenEastVehicles[1];
+gar G vehiclesEast[2]=EMERGENCY -> greenEastVehicles[2];
+gar G vehiclesEast[0]=EMERGENCY -> greenEastVehicles[0];
+gar G vehiclesWest[1]=EMERGENCY -> greenWestVehicles[1];
+gar G vehiclesWest[2]=EMERGENCY -> greenWestVehicles[2];
+gar G vehiclesWest[0]=EMERGENCY -> greenWestVehicles[0];
+
+
+// *******************************************************************************
+// *** by assuring there is infinitely often no waiting pedestrian, we prevent ***
+// *** situation in which pedestrian is starved and never allowed to cross     *** 
+// *******************************************************************************
+
+gar GF !pedestrianNorthWestWaiting;
+gar GF !pedestrianNorthEastWaiting;
+gar GF !pedestrianSouthWestWaiting;
+gar GF !pedestrianSouthEastWaiting;
+gar GF !pedestrianWestNorthWaiting;
+gar GF !pedestrianWestSouthWaiting;
+gar GF !pedestrianEastNorthWaiting;
+gar GF !pedestrianEastSouthWaiting;

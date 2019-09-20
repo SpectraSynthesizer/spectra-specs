@@ -1,0 +1,137 @@
+import "./patterns/DwyerPatterns.spectra"
+/*
+ * non-well separated specification (strict)
+ * due to lines 89 and 113
+ * when ignoring INITIAL guarantees The system can force the environment to violate some justice assumption from INITIAL states which ignores those guarantees.
+ * bank decline reason ENV variable was added in addition to all its corresponding assumptions
+ * logoutSystem variable was added - all logout/timeout/maxAttempts requests lead to logoutSystem process.
+ * logoutSystem replaced any appearance of logout/timeout/reachedMAxAttempts
+ */
+module ATM			
+
+type Operation = {LOGIN,TRANSFER ,DEPOSIT, WITHDRAW, BALANCE, LOGOUT, NONE,TIMEOUT};
+type Response = {YES, NO, NO_CONNECTION};
+type RequestStatus = {APPROVED, REJECTED, CONNECTION_ERROR, NONE};
+type timerStatus = {START,STOP,NONE};
+type declineReason = {NO_MONEY,WRONG_ACCOUNT,WRONG_PASSWORD,NONE}; //added
+
+define
+	noneRequest := userRequest = NONE;
+	logoutRequest := userRequest = LOGOUT;
+	loginRequest := userRequest = LOGIN;
+	balanceRequest := userRequest = BALANCE;
+	depositRequest := userRequest = DEPOSIT;
+	withdrawRequest := userRequest = WITHDRAW;
+	transferRequest := userRequest = TRANSFER;
+	 timeOut := userRequest = TIMEOUT;
+	
+	userTransactionReq := depositRequest | withdrawRequest | balanceRequest | transferRequest;
+	
+	noBankResponse := bankResponse = NO_CONNECTION;
+	bankApproved := bankResponse = YES;
+	bankRejected := bankResponse = NO;
+	
+	statusApproved := requestStatus = APPROVED;
+	statusRejected := requestStatus = REJECTED;
+	statusErr := requestStatus = CONNECTION_ERROR;
+	statusNone := requestStatus = NONE;
+	
+	startTimer := timerOps = START;
+	endTimer := timerOps = STOP;
+	noTimerOp := timerOps = NONE;
+	
+	wrongAccount := transactionDecline = WRONG_ACCOUNT;//added
+	noMoney := transactionDecline = NO_MONEY;//added
+	wrongPassword := transactionDecline = WRONG_PASSWORD;//added
+	noDecline := transactionDecline = NONE;//added
+	
+	
+ 
+-------environment variables
+//user
+env boolean cardInserted;
+env Operation userRequest;
+//Bank
+env Response bankResponse;
+env declineReason transactionDecline;
+
+
+-------system variables
+//wait for bank response to valid login request
+sys boolean waitBankLoginResponse; 
+//wait for bank response to valid transaction request(deposit,withdraw,balance)
+sys boolean waitBankTransactionResponse; 
+//current status of valid request from the previous state
+sys RequestStatus requestStatus;
+//reached maximum number of login attempts
+sys boolean reachedMaxFailes;
+//current status of timer
+sys timerStatus timerOps;
+
+sys boolean logoutSystem;
+
+
+-------assumptions
+//initial
+asm !cardInserted & noneRequest & noBankResponse & noDecline;
+// if no request has been sent to the bank, bank won't answer
+asm G (!waitBankLoginResponse & !waitBankTransactionResponse) -> next(noBankResponse);
+// if we are waiting for bank response - the user won't send request on the next state
+asm G (waitBankLoginResponse | waitBankTransactionResponse | logoutSystem) -> next(noneRequest);
+// bank can not reject balance request - only approve or not being connected
+asm G ((waitBankTransactionResponse & balanceRequest) |(waitBankTransactionResponse & depositRequest)) -> next(!bankRejected);
+// if card is not inserted there is no user request
+asm G ((!cardInserted) -> (next(noneRequest)));
+// card is still in if there is no logout request or timeout
+asm G ((cardInserted & (!logoutSystem)) -> (next(cardInserted)));
+//after there is logout or timeout exit
+asm G logoutSystem -> next(!cardInserted);
+asm GF cardInserted;
+asm G ((transferRequest) & (next(bankRejected))) -> next(noMoney | wrongAccount);//added
+asm G ((withdrawRequest) & (next(bankRejected))) -> next(noMoney);//added
+asm G ((loginRequest) & (next(bankRejected))) -> next(wrongPassword);//added
+asm G (next(bankApproved) | next(noBankResponse)) -> next(noDecline);//added
+
+-------guarantees
+//initial
+gar !waitBankLoginResponse & !waitBankTransactionResponse & statusNone ;
+
+//waiting bank response
+gar G (loginRequest & cardInserted & !userLoggedIn) <-> waitBankLoginResponse;
+gar G (userTransactionReq & userLoggedIn) <-> waitBankTransactionResponse;
+
+//update user request status according to bank response
+gar G (waitBankTransactionResponse | waitBankLoginResponse) & next(bankApproved) <-> next(statusApproved);
+gar G (waitBankTransactionResponse | waitBankLoginResponse) & next(bankRejected) <-> next(statusRejected);
+gar G (waitBankTransactionResponse | waitBankLoginResponse) & next(noBankResponse) <-> next(statusErr);
+gar G (!waitBankLoginResponse & !waitBankTransactionResponse) <-> next(statusNone);
+
+gar G (((loginAttempts >= 2) & statusRejected) <-> reachedMaxFailes);
+gar G userTransactionReq | loginRequest |logoutSystem -> endTimer;
+gar G ((!statusNone) & (!reachedMaxFailes)) -> (startTimer);
+gar G !cardInserted & next(cardInserted) -> next(startTimer);
+gar GF startTimer | endTimer;
+gar G !cardInserted -> noTimerOp;
+gar G reachedMaxFailes | timeOut | logoutRequest <-> logoutSystem;
+
+
+
+
+//login status
+monitor boolean userLoggedIn {
+	!userLoggedIn;
+	G next(userLoggedIn) = 
+	((userLoggedIn & !logoutSystem) | (statusApproved & !userLoggedIn)
+	);
+}
+
+
+counter loginAttempts(0..2) {
+// initially loginAttempts is set to zero
+loginAttempts=0;
+// increment every time that pin was incorrectly inserted
+inc:((!userLoggedIn) & (statusRejected));
+// reset if logged into the system or logout
+reset:(!cardInserted);
+overflow:keep;
+}

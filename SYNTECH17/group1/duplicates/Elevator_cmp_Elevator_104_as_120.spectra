@@ -1,0 +1,282 @@
+import "../patterns/DwyerPatterns.spectra"
+
+module Elevator
+
+
+type DoorsMotorCmd= {CLOSE, STOP,OPEN};
+type LiftMotorCmd= {UP, STOP,DOWN};
+type LampCmd= {ON, OFF};
+type FloorState={FLOOR0,FLOOR1,FLOOR2,FLOOR3,NONE};
+type DoorsState={Closed,Opened,FullyOpened};
+// type VelocityC= {ZERO, SLOW,FAST};
+
+
+
+// env variables indicating calls (from floors).
+env boolean calls0_c;
+env boolean calls1_c;
+env boolean calls2_c;
+env boolean calls3_c;
+
+// Signals indicating that 3,5 and 20 seconds have passed (since the last
+// activation of the boolean variable 'countTime_c')
+env boolean seconds3;
+env boolean seconds5;
+env boolean seconds20;
+ 
+// Those env variables are being connected to the controller, reporting
+// current floor\door state.
+env FloorState floor_c;
+env DoorsState doors_c;
+
+//env boolean shabbatMode;
+
+
+// System's motors, lamp and timer commands
+sys LiftMotorCmd liftM_c;
+sys DoorsMotorCmd doorsM_c;
+sys LampCmd lamp_c;
+sys boolean countTime_c;
+
+
+// no further comments on the spec, as every gar and asm has a symbolic name.
+
+define 
+  goingUp                      :=   (liftM_c = UP);
+  goingDown                    :=   (liftM_c = DOWN);
+  moving                       :=   (liftM_c = UP | liftM_c = DOWN);
+  openningDoors                :=   (doorsM_c = OPEN);
+  closingDoors                 :=   (doorsM_c = CLOSE);
+  keepDoorsState               :=   (doorsM_c = STOP);
+  lightIsOn                    :=   (lamp_c = ON);
+  doorsAreClosed               :=   (doors_c = Closed);
+  doorsAreFullyOpened          :=   (doors_c = FullyOpened);  
+  floor0                       :=   (floor_c=FLOOR0);
+  floor1                       :=   (floor_c=FLOOR1);
+  floor2                       :=   (floor_c=FLOOR2);
+  floor3                       :=   (floor_c=FLOOR3);
+  atEdgedFloor                 :=   (floor0 | floor3);
+  atFloor                      :=   floor0|floor1|floor2|floor3; 
+  anyCalls                     :=   (memCall0 | memCall1 | memCall2 | memCall3); 
+  atDesignatedFloor            :=   (floor0 & memCall0) | (floor1 & memCall1)  | (floor2 & memCall2) | (floor3 & memCall3);
+  firstStateAtDesignatedFloor  :=   atDesignatedFloor&doorsAreClosed;
+  openStateAtDesignatedFloor   :=   atDesignatedFloor&doorsAreFullyOpened;
+  
+
+  //returnTo0 := false;
+
+monitor boolean returnTo0
+{  !returnTo0;
+   G (!floor0 & ((!anyCalls&seconds20) | returnTo0))<->next (returnTo0) ; 
+}
+
+
+monitor boolean memCall0
+{
+  !memCall0;
+  G (calls0_c & !memCall0) -> next (memCall0);
+  G (floor0 & !doorsAreClosed & next (doorsAreClosed)) -> next (!memCall0);
+  G (!(calls0_c & !memCall0) & !(floor0 & !doorsAreClosed & next (doorsAreClosed))) -> (next (memCall0) = memCall0);
+}
+
+monitor boolean memCall1
+{
+  !memCall1;
+  G (calls1_c & !memCall1) -> next (memCall1);
+  G (floor1 & !doorsAreClosed & next (doorsAreClosed)) -> next (!memCall1);
+  G (!(calls1_c & !memCall1) & !(floor1 & !doorsAreClosed & next (doorsAreClosed))) -> (next (memCall1) = memCall1);
+}
+
+monitor boolean memCall2
+{
+  !memCall2;
+  G (calls2_c & !memCall2) -> next (memCall2);
+  G (floor2 & !doorsAreClosed & next (doorsAreClosed)) -> next (!memCall2);
+  G (!(calls2_c & !memCall2) & !(floor2 & !doorsAreClosed & next (doorsAreClosed))) -> (next (memCall2) = memCall2);
+}
+
+monitor boolean memCall3
+{
+  !memCall3;
+  G (calls3_c & !memCall3) -> next (memCall3);
+  G (floor3 & !doorsAreClosed & next (doorsAreClosed)) -> next (!memCall3);
+  G (!(calls3_c & !memCall3) & !(floor3 & !doorsAreClosed & next (doorsAreClosed))) -> (next (memCall3) = memCall3);
+}
+
+
+/* 
+gar
+  pHolds_afterQuntilR(openningDoors,doorsAreClosed,doorsAreFullyOpened);
+  
+gar
+  pHolds_afterQuntilR(closingDoors,doorsAreFullyOpened,doorsAreClosed);
+
+gar
+  G (!moving);
+*/
+
+/*
+gar
+  pHolds_afterQuntilR(goingUp,floor0,floor1);
+  
+gar
+  pHolds_afterQuntilR(goingDown,floor1,floor0);
+
+gar
+  G (keepDoorsState);
+
+*/
+
+//INIT GUARANTEES
+gar init_motors:
+(!moving) & (keepDoorsState) & (!lightIsOn) ;
+
+
+//INIT ASSUMPTIONS
+asm startFromFloor0:
+  floor0;
+  
+asm startFromClosedDoors:
+  doorsAreClosed;
+
+asm timerHasNotBeenActivatedPriorStart: 
+  !(seconds3|seconds5|seconds20);
+
+
+
+gar
+  G !lightIsOn;
+/* 
+gar lightBlinksWhileMoving:
+G moving -> (next (lightIsOn) = !lightIsOn);
+
+gar lightIsOffWhileNotMoving:
+G (!moving) -> (next(!lightIsOn) );
+*/
+
+
+//Safety Guarantees
+gar ifFloor0DontGoDown:
+G floor0 -> !(goingDown) ;
+
+gar ifFloor3DontGoUp:
+G floor3 -> !(goingUp) ;
+
+gar ifDoorsAreClosedDontClose:
+G doorsAreClosed -> (!closingDoors) ;
+
+gar ifDoorsAreFullyOpenedDontOpen:
+G doorsAreFullyOpened->(!openningDoors);
+
+
+gar dontMoveWithoutAReason:
+  G (((!anyCalls) & (!returnTo0))| (returnTo0 & floor0)) -> !moving;
+
+
+gar dontOpenDoorsWithoutAReason:
+  G (!atDesignatedFloor)->(!openningDoors);
+  
+  
+ 
+  
+//Movement Gars
+gar doorsAreClosedWhileMoving:
+  G ((!doorsAreClosed)->(!moving)) & (moving->keepDoorsState);
+
+gar dontChangeDirectionWithoutStopping:
+  G (goingUp -> next (!goingDown)) & (goingDown -> next (!goingUp));  
+
+gar dontStopWithoutAReason:
+  G moving->(next(!moving->(atDesignatedFloor|atEdgedFloor)));
+  
+  
+  
+//ENVIROMENT'S DESCRIPTION ASSUMPTIONS
+asm floorChangeCannotHappenWithoutMoving: 
+  G (!moving)->(next(floor_c)=floor_c);
+  
+  
+asm keepingTheStateOfTheDoors:
+  G (keepDoorsState)->(next(doors_c)=doors_c);
+  
+  
+asm movingDoorsCauseChangeInDoorsState:
+  G (openningDoors->next(!doorsAreClosed))&(closingDoors->next(!doorsAreFullyOpened));  
+
+
+asm goingUpFromFloor0CauseBehingAtFloor1:
+  pRespondsToS(floor0&goingUp,floor1);
+  
+asm goingUpFromFloor1CauseBehingAtFloor2:
+  pRespondsToS(floor1&goingUp,floor2);
+
+asm goingUpFromFloor2CauseBehingAtFloor3:
+  pRespondsToS(floor2&goingUp,floor3); 
+  
+asm goingDownFromFloor1CauseBehingAtFloor0:
+  pRespondsToS(floor1&goingDown,floor0);
+  
+asm goingDownFromFloor2CauseBehingAtFloor1:
+  pRespondsToS(floor2&goingDown,floor1);
+
+asm goingDownFromFloor3CauseBehingAtFloor2:
+  pRespondsToS(floor3&goingDown,floor2);
+
+
+
+
+//DESIGNATED FLOOR GUARANTEES
+gar ifAtDesignatedFloorDontMove:
+    G atDesignatedFloor->(!moving);
+    
+gar AtDesignatedFloorDontOpenDoorsUntill3Seconds:
+    pHolds_afterQuntilR(!openningDoors,firstStateAtDesignatedFloor,seconds3);
+
+gar AtDesignatedFloorOpenDoorsWithin3Seconds:
+    pHolds_afterQuntilR(openningDoors,firstStateAtDesignatedFloor&seconds3,doorsAreFullyOpened);
+    
+gar AtDesignatedFloorHoldTheDoorsFullyOpenedFor5Seconds:
+    pHolds_afterQuntilR(keepDoorsState,doorsAreFullyOpened,seconds5);
+
+        
+
+
+//CLOCK GUARANTEES AND ASSUMPTIONS
+
+gar startCountingTime:
+  G (!(moving|anyCalls |floor0|returnTo0) | firstStateAtDesignatedFloor | openStateAtDesignatedFloor)->countTime_c;
+ 
+
+asm envDoesntCountTimeWhenNotRequired:
+  G (!countTime_c) -> next (!seconds3&!seconds5&!seconds20) ;
+
+asm not20SecondsAnd5SecondsBefore3Seconds:
+  G (!seconds3) -> !(seconds20|seconds5) ;
+
+asm not20SecondsBefore5Seconds:
+  G (!seconds5)->(!seconds20);
+
+asm ifCount3SecAndStillCountThenNext3Sec:
+  G (seconds3&countTime_c)->next(seconds3);  
+
+asm ifCount5SecAndStillCountThenNext5Sec:
+  G (seconds5&countTime_c)->next(seconds5);  
+
+asm ifCount20SecAndStillCountThenNext20Sec:
+  G (seconds20&countTime_c)->next(seconds20);
+
+
+
+//REACH TO DESIGNATED FLOORS
+  
+
+
+  
+
+
+//RETURN TO FLOOR0 GUARANTEES AND ASSUMPTIONS
+
+
+//gar returnTo0WhenRequired:
+//  pHolds_afterQuntilR(goingDown,returnTo0,!returnTo0);
+  //pRespondsToS(returnTo0,floor0);

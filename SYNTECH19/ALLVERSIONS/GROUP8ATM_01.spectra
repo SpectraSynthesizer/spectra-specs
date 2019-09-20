@@ -1,0 +1,57 @@
+import "./patterns/DwyerPatterns.spectra"
+/*
+ *  Basic spectra file - 
+ * user request + wait for bank response process.
+ *  Also userloggedin monitor has been added.
+ */
+ 
+
+module ATM			
+
+type Operation = {LOGIN, DEPOSIT, WITHDRAW, LOGOUT, NONE};
+type Response = {YES, NO, NO_CONNECTION};
+
+define
+	noneRequest := userRequest = NONE;
+	logoutRequest := userRequest = LOGOUT;
+	loginRequest := userRequest = LOGIN;
+	depositRequest := userRequest = DEPOSIT;
+	withdrawRequest := userRequest = WITHDRAW;
+	userTransactionReq := depositRequest | withdrawRequest;
+	
+	noBankResponse := bankResponse = NO_CONNECTION;
+	bankApproved := bankResponse = YES;
+	bankDisapprove := bankResponse = NO;
+	
+	
+ 
+-------environment variables
+//user
+env boolean cardInserted;
+env Operation userRequest;
+
+//Bank
+env Response bankResponse;
+
+-------system variables
+sys boolean waitBankLoginResponse;
+sys boolean waitBankTransactionResponse;
+
+
+-------assumptions
+asm !cardInserted & noneRequest & noBankResponse;
+asm G (!waitBankLoginResponse & !waitBankTransactionResponse) -> next(noBankResponse);
+asm G (waitBankLoginResponse | waitBankTransactionResponse -> next(noneRequest));
+
+
+-------guarantees
+gar !waitBankLoginResponse & !waitBankTransactionResponse;
+gar G (loginRequest & cardInserted & !userLoggedIn) <-> waitBankLoginResponse;
+gar G (userTransactionReq & userLoggedIn) <-> waitBankTransactionResponse;
+
+monitor boolean userLoggedIn {
+	!userLoggedIn;
+	G next(userLoggedIn) = 
+	((userLoggedIn & !logoutRequest) | (bankApproved & !logoutRequest)
+	);
+}

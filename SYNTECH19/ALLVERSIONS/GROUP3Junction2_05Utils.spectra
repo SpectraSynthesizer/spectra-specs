@@ -1,0 +1,67 @@
+spec Utils
+
+
+type Vehicle = {NONE, CAR, EMERGENCY};
+
+
+predicate emergencyMultiMutualExclusion(Vehicle source, Vehicle a, Vehicle b, Vehicle c, Vehicle d):
+	!(source=EMERGENCY & (a=EMERGENCY | b=EMERGENCY | c=EMERGENCY | d=EMERGENCY ));
+
+	
+predicate noEmergency(Vehicle a,Vehicle b,Vehicle c,Vehicle d,Vehicle e,Vehicle f,Vehicle g,Vehicle h,Vehicle i,Vehicle j,Vehicle k,
+	Vehicle l,boolean greenA,boolean greenB,boolean greenC,boolean greenD,boolean greenE,boolean greenF,boolean greenG,boolean greenH,
+	boolean greenI,boolean greenJ,boolean greenK,boolean greenL):
+	(a!=EMERGENCY | (a=EMERGENCY & !greenA)) & (b!=EMERGENCY | (b=EMERGENCY & !greenB)) & (c!=EMERGENCY | (c=EMERGENCY & !greenC)) &
+	(d!=EMERGENCY | (d=EMERGENCY & !greenD)) & (e!=EMERGENCY | (e=EMERGENCY & !greenE)) & (f!=EMERGENCY | (f=EMERGENCY & !greenF)) &
+	(g!=EMERGENCY | (g=EMERGENCY & !greenG)) & (h!=EMERGENCY | (h=EMERGENCY & !greenH)) & (i!=EMERGENCY | (i=EMERGENCY & !greenI)) &
+	(j!=EMERGENCY | (j=EMERGENCY & !greenJ)) & (k!=EMERGENCY | (k=EMERGENCY & !greenK)) & (l!=EMERGENCY | (l=EMERGENCY & !greenL));
+
+
+predicate consistentVehicleAssertion(Vehicle vehicle, boolean trafficLight):
+	vehicle != NONE & !trafficLight -> next(vehicle)=vehicle;
+
+
+predicate consistentPedestrianAssertion(boolean ped, boolean pedLight):
+	ped & !pedLight -> next(ped)=ped;	
+	
+	
+predicate quickEmergencyCrossingAssertion(Vehicle vehicle, boolean trafficLight, boolean fogCondtition):
+	vehicle=EMERGENCY & !fogCondtition -> trafficLight;
+
+
+predicate quickEmergencyCrossingAssertionWithClosedRoad(Vehicle vehicle, boolean trafficLight, boolean isFoggy, boolean isRoadClosed):
+	vehicle=EMERGENCY & !isFoggy & !isRoadClosed-> trafficLight;
+	
+		
+predicate TrafficLightsExclusion(boolean lightA, boolean lightB, boolean lightC, boolean lightD, 
+	boolean lightE, boolean lightF, boolean lightG, boolean lightH):
+	!((lightA & lightC) | (lightA & lightH) | (lightC & lightH)) &
+	!((lightD & lightE) | (lightD & lightG) | (lightE & lightG)) &
+	!((lightA & lightF) | (lightA & lightG) | (lightF & lightG)) &
+	!((lightB & lightC) | (lightB & lightE) | (lightC & lightE)) &
+	!((lightB | lightF) & (lightD | lightH));
+
+	
+predicate EmergencyCrashExclusion(Vehicle emergencyA, Vehicle emergencyB, Vehicle emergencyC, Vehicle emergencyD, 
+	Vehicle emergencyE, Vehicle emergencyF, Vehicle emergencyG, Vehicle emergencyH):
+	!((emergencyA=EMERGENCY & emergencyC=EMERGENCY) | (emergencyA=EMERGENCY & emergencyH=EMERGENCY) | (emergencyC=EMERGENCY & emergencyH=EMERGENCY)) &
+	!((emergencyD=EMERGENCY & emergencyE=EMERGENCY) | (emergencyD=EMERGENCY & emergencyG=EMERGENCY) | (emergencyE=EMERGENCY & emergencyG=EMERGENCY)) &
+	!((emergencyA=EMERGENCY & emergencyF=EMERGENCY) | (emergencyA=EMERGENCY & emergencyG=EMERGENCY) | (emergencyF=EMERGENCY & emergencyG=EMERGENCY)) &
+	!((emergencyB=EMERGENCY & emergencyC=EMERGENCY) | (emergencyB=EMERGENCY & emergencyE=EMERGENCY) | (emergencyC=EMERGENCY & emergencyE=EMERGENCY)) &
+	!((emergencyB=EMERGENCY | emergencyF=EMERGENCY) & (emergencyD=EMERGENCY | emergencyH=EMERGENCY));
+	
+
+predicate VehiclesAndPedestriansTrafficLightExclusion(boolean lightPedNorthA, boolean lightPedNorthB, 
+		boolean lightPedEastA, boolean lightPedEastB, boolean lightPedSouthA, boolean lightPedSouthB, 
+		boolean lightPedWestA, boolean lightPedWestB, boolean lightVehicleNorthA, boolean lightVehicleNorthB,
+ 		boolean lightVehicleNorthC, boolean lightVehicleEastA, boolean lightVehicleEastB, boolean lightVehicleEastC,
+ 		boolean lightVehicleSouthA, boolean lightVehicleSouthB, boolean lightVehicleSouthC,boolean lightVehicleWestA,
+ 		boolean lightVehicleWestB, boolean lightVehicleWestC):
+	!(lightPedNorthA & (lightVehicleNorthA | lightVehicleNorthB | lightVehicleNorthC)) &
+	!(lightPedEastA & (lightVehicleEastA | lightVehicleEastB | lightVehicleEastC)) &
+	!(lightPedSouthA & (lightVehicleWestA | lightVehicleNorthB | lightVehicleEastC)) &
+	!(lightPedWestA & (lightVehicleNorthA | lightVehicleEastB | lightVehicleSouthC)) &
+	!(lightPedNorthB & (lightVehicleEastA | lightVehicleSouthB | lightVehicleWestC)) &
+	!(lightPedEastB & (lightVehicleSouthA | lightVehicleWestB | lightVehicleNorthC)) &
+	!(lightPedSouthB & (lightVehicleSouthA | lightVehicleSouthB | lightVehicleSouthC)) &
+	!(lightPedWestB & (lightVehicleWestA | lightVehicleWestB | lightVehicleWestC));

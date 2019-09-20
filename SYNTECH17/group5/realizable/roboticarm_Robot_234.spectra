@@ -1,0 +1,305 @@
+module z2
+
+
+env Color t0;
+env Color t1;
+env Color t2;
+
+
+
+env Task task;
+
+
+sys boolean hanoiIsMoving;
+sys Int(0..2) hanoiFrom;
+sys Int(0..2) hanoiTo;
+
+
+aux Color hanoiFromColor;
+aux Color hanoiToColor;
+
+
+/*
+ * EMPTY denotes an empty station
+ * NOT denotes a not exists station. For example, if there're only 4 stations, then the stations[4] = NOT, and stations[5] = NOT
+ * 
+ */
+type Color = {RED, GREEN, BLUE, EMPTY, NOT};
+
+/*
+ * During the INIT mode, the robot scans the stations, and checks how many stations there're, and what are their balls' colors
+ * MOVE moves the ball from 'from' to 'to', assuming 'to' is an empty station
+ * NOTHING means that the robot stands and does not move, and just does nothing
+ * 
+ * Notice that MOVE essentially swaps between 'from' and 'to',
+ * as after MOVE 'from' points to the empty place that previously was in the place 'to' points to,
+ * and 'to' points to the ball that previously was in the place pointed to by 'from'
+ */
+ 
+
+
+
+type Task = {
+  SCAN,
+  SORT, //sorts the stations using mode = MOVE, and then satisfies mode = NOTHING 
+  EXCHANGE, //exchanges two different colored balls using mode = MOVE
+  
+  SWAP_RED_AND_BLUE,
+  MOVE_RED_LEFT,
+  GATHER_REDS,
+  
+  //MANUAL_MOVE, //move from 'from' to 'to'
+  //HANOI_MOVE,
+  //STOP_MOVING,
+  //SHUT OFF,
+  
+  //MOVE_RIGHT,
+  //MOVE_LEFT,
+  //MOVE_UP,
+  //MOVE_DOWN,
+   
+  HANOI
+  
+};
+
+
+
+
+
+predicate hanoiAssign(Int(0..2) index, Color colorIndex):
+  ((index = 0) -> colorIndex = t0) &
+  ((index = 1) -> colorIndex = t1) &
+  ((index = 2) -> colorIndex = t2) ;
+
+gar G next(hanoiAssign(hanoiFrom, hanoiFromColor));
+gar G next(hanoiAssign(hanoiTo, hanoiToColor));
+
+
+
+  
+
+
+
+
+
+/*
+ * 
+ * 
+ * 
+ * 
+ * ------------------ SCAN TASK ---------------
+ * 
+ * 
+ * 
+ * 
+ */
+
+asm startWithScan:
+  task = SCAN;
+
+/*
+ * 
+ * 
+ * 
+ * ---------  HANOI TASK -------------------
+ * 
+ * Recall that in Hanoi task moving from 'from' to 'to' gets another interpretation
+ * 
+ * 
+ */
+    
+
+
+asm continueHanoiUntilDone:
+  G (task = HANOI & !hanoiDone) -> next(task) = HANOI;
+    
+gar
+  GF (task = HANOI & hanoiAsms) -> hanoiDone;
+
+gar
+  G task = HANOI & hanoiDone -> !hanoiIsMoving;     
+
+
+asm
+  G hanoiIsMoving & task = HANOI -> hanoiOnExchangeSave;
+  
+gar
+  G task = HANOI & hanoiIsMoving -> hanoiLegalMove;
+  
+
+gar
+  G hanoiIsMoving -> task = HANOI;
+  
+  
+define
+
+  hanoiOnExchangeSave :=
+   
+    (((hanoiFrom != 0) & (hanoiTo!=0)) -> ((next(t0) = t0))) &
+    (((hanoiFrom != 1) & (hanoiTo!=1)) -> ((next(t1) = t1))) &
+    (((hanoiFrom != 2) & (hanoiTo!=2)) -> ((next(t2) = t2))) ;
+
+
+  hanoiAsms :=
+    t0 != NOT &
+    t1 != NOT &
+    t2 != NOT ;
+    
+//  hanoiAsms :=
+//    s0 != NOT &
+//    s1 != NOT &
+//    s2 != NOT ;
+  
+//  hanoiAsms := //initially, only the first tower is occupied  
+//    (s1 = EMPTY) &
+//    (s2 = EMPTY);
+  
+  hanoiDone := //at the end, only the second tower is occupied
+    (t0 = EMPTY) &
+    (t2 = EMPTY);
+  
+  hanoiLegalMove :=
+//    (hanoiFrom <= 2) & //only 3 towers exist
+//    (hanoio   <= 2) & //only 3 towers exist
+    hanoiFromColor != EMPTY &
+    hanoiToColor > hanoiFromColor;
+    
+//
+//asm
+//  G (task = HANOI & hanoiIsMoving & hanoiAsms & hanoiLegalMove) ->
+//      incrementColor(hanoiFrom);  
+    
+asm
+  G (task = HANOI & hanoiIsMoving & hanoiAsms & hanoiLegalMove) ->
+      hanoiSetColor(hanoiTo, hanoiFromColor) ;
+asm
+  G (task = HANOI & hanoiIsMoving & hanoiAsms & hanoiLegalMove) ->      
+//      hanoiIncrementColor(hanoiFrom);
+      hanoiNextFrom;
+
+
+predicate hanoiSetColor(Int(0..2) index, Color color):
+  ((index = 0) -> next(t0)=color) &
+  ((index = 1) -> next(t1)=color) &
+  ((index = 2) -> next(t2)=color) ;
+
+//in future version there will be dec and strictDec predicates for strict and non-strict inequalities,
+//and there will be two asms: G dec, GF strictDec
+predicate hanoiIncrementColor(Int (0..2) index):
+  ((index = 0 & t0 != EMPTY) -> (next(t0) > t0) & (next(t0) != NOT)) &
+  ((index = 1 & t1 != EMPTY) -> (next(t1) > t1) & (next(t1) != NOT)) &
+  ((index = 2 & t2 != EMPTY) -> (next(t2) > t2) & (next(t2) != NOT)) ;
+
+define
+  hanoiNextFrom :=
+    (hanoiFrom = 0 -> nextColor(t0)) &
+    (hanoiFrom = 1 -> nextColor(t1)) &
+    (hanoiFrom = 2 -> nextColor(t2)) ;
+  
+     
+/*
+ * 
+ * 
+ * 
+ * EXTRA ASSUMPTIONS
+ * 
+ * 
+ * 
+ */
+
+
+
+
+
+
+predicate isColor(Color color):
+  color != EMPTY & color != NOT;
+ 
+
+  
+
+
+define
+
+//  nextTask :=
+//    (task = SCAN   -> next(task) = SORT) &
+//    (task = SORT   -> next(task) = SCAN) ;
+
+  
+//  nextTask :=
+//    (task = SCAN   -> next(task) = SORT) &
+//    (task = SORT   -> next(task) = HANOI) &
+//    (task = HANOI  -> next(task) = SCAN);
+    
+    
+    
+  nextTask :=
+    (task = SCAN              -> next(task) = SORT) &
+    (task = SORT              -> next(task) = EXCHANGE) &
+    (task = EXCHANGE          -> next(task) = SWAP_RED_AND_BLUE) &
+    (task = SWAP_RED_AND_BLUE -> next(task) = MOVE_RED_LEFT) &
+    (task = MOVE_RED_LEFT     -> next(task) = GATHER_REDS) &
+    (task = GATHER_REDS       -> next(task) = HANOI) &
+    (task = HANOI             -> next(task) = SCAN);
+
+
+
+    
+//asm G next(task) = SORT;
+
+
+
+
+asm G next(task) = HANOI;
+
+//gar G !sortDone -> next(isMoving);
+//gar G task = SCAN -> next(from = 1 & to = 0);
+//gar G task = SCAN -> next(from) = 1 & next(to) = 0;
+//gar G task = SCAN -> next(isMoving);
+
+//asm G next(task) = SCAN;
+
+define
+  hanoiStrongAsms :=
+    t0 = RED &
+    t1 = EMPTY &
+    t2 = EMPTY;
+
+asm hanoiStrongAsms;
+asm G task = SCAN -> next(hanoiStrongAsms);
+
+gar G next(hanoiFrom) != next(hanoiTo);
+
+define
+  hanoiSaveAll :=
+    (next(t0) = t0) &
+    (next(t1) = t1) &
+    (next(t2) = t2) ;
+
+asm G !hanoiIsMoving -> hanoiSaveAll;
+
+predicate notEequal(Color a, Color b):
+  next(a = b -> a = EMPTY);
+define
+  noRepeats :=
+    notEequal(t0, t1) &
+    notEequal(t0, t2) &
+    notEequal(t1, t2) &
+//    (hanoiIsMoving -> !hanoiSetColor(hanoiFrom, t0)) &
+    (hanoiIsMoving & hanoiSetColor(hanoiFrom, t0) -> t0 =EMPTY) &
+    (hanoiIsMoving & hanoiSetColor(hanoiFrom, t1) -> t1 =EMPTY) &
+    (hanoiIsMoving & hanoiSetColor(hanoiFrom, t2) -> t2 =EMPTY) ;
+    
+asm G task = HANOI -> noRepeats;
+
+   
+predicate nextColor(Color color):
+  next(color) = EMPTY |
+  (
+  (color = RED   -> next(color) = GREEN) &
+  (color = GREEN -> next(color) = BLUE) &
+  (color = BLUE  -> next(color) = EMPTY) &
+  (color = EMPTY -> next(color) = EMPTY) );
+ 
+
+    

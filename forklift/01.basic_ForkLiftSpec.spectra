@@ -1,0 +1,39 @@
+module ForkLiftSpec
+
+    env { far, close } distance ;
+
+    sys { lift, drop, go, idle } command ;
+
+  // safety requirements of environment
+  /////////////////////////////////////
+  assumption
+    G ((distance = far & command != go) -> next (distance) = far);
+  
+  assumption
+    G (command = go -> next (distance = close));
+    
+  assumption
+    G ((distance= close & command!=lift) -> next (distance = close));
+  assumption
+    G ((distance= close & command=lift) -> next (distance = far));
+
+  // safety of system
+  ///////////////////////////////////////
+  guarantee
+    command = idle;
+
+  guarantee
+    G (distance = far -> command != lift);
+
+  guarantee
+    G (distance = close  -> command != go);
+  
+  guarantee
+    G (command = drop  -> PREV((command!=drop) SINCE (command=lift)));
+  
+  guarantee
+  GF (command=drop);
+  
+  guarantee
+  GF (command=go);
+  

@@ -1,0 +1,243 @@
+module Robot
+
+env Color s1;
+env Color s2;
+env Color s3;
+env Color s4;
+
+env Color[4] stations;
+env boolean legal;
+env boolean emgoff;
+
+sys Mode mode;
+sys Int(0..3) from;
+sys Int(0..3) to;
+
+asm
+  stations[0]=s1;
+asm
+  stations[1]=s2;
+asm
+  stations[2]=s3;
+asm
+  stations[3]=s4;
+
+
+asm
+  G secondStep->(stations[0]=s1);
+asm
+  G secondStep->(stations[1]=s2);
+asm
+  G secondStep->(stations[2]=s3);
+asm
+  G secondStep->(stations[3]=s4);
+
+
+
+
+
+/*
+ * EMPTY denotes an empty station
+ * NOT_EXISTS denotes a not exists station
+ * 
+ */
+type Color = {RED, GREEN, BLUE, EMPTY, NOT};
+/*
+ * During the INIT mode, the robot scans the stations, and checks how many stations there're, and what are their balls' colors
+ * MOVE moves the ball from 'from' to 'to', assuming 'to' is an empty station
+ * During WAITING mode, the robot waits until 'working' becomes false
+ */
+ 
+type Mode = {MOVE, STOP, INIT};
+
+asm
+  legal=true;
+  
+asm
+  G legal = true;
+
+  
+asm
+  G emgoff = false;
+
+asm
+  emgoff = false;
+
+gar mode = INIT;
+
+aux boolean initDone;
+gar !initDone;
+//only when the working becomes false, and after mode was already INIT
+gar G next(initDone) = (mode = INIT | initDone);
+
+gar G initDone -> mode != INIT;
+
+
+aux boolean secondStep;
+gar !secondStep;
+gar G next(secondStep) = (mode = INIT);
+
+
+//otherwise, sorting were not possible, as sorting never moves non-existing stations, and in sorted array, the non-existing ones should be to the end
+//asm G firstStationsExist;
+
+//??
+//asm sortingAssumptions;
+
+gar
+  GF sortingAssumptions -> sorted;
+//  GF blueArray;
+  
+
+//?? to exchange between commented & uncommented 
+//gar
+//  GF sortingAssumptions ->!sorted;
+  
+gar G (sorted & mode != INIT) -> mode = STOP;
+
+
+//gar GF mode = MOVE & from = 0 & to = 1;
+
+
+gar
+  G (mode = MOVE) -> (fromExists & toExists & toIsEmpty);
+
+  
+  
+//asm GF someIsEmpty;
+
+//notice that there's no asm of keepOnInit, as nothing to keep in the init
+asm keepOnMove:
+  G (mode = MOVE) -> (onExchangeKeep & swap);
+
+asm keepOnNothing:
+  G (mode = STOP) -> keepAll;
+
+/*
+ * some defines
+ * 
+ */
+ 
+ define
+  
+  keepAll :=
+    (next(stations[0]) = stations[0]) &
+    (next(stations[1]) = stations[1]) &
+    (next(stations[2]) = stations[2]) &
+    (next(stations[3]) = stations[3]) ;
+    
+ onExchangeKeep :=
+   
+    (((from != 0) & (to!=0)) -> ((next(stations[0]) = stations[0]))) &
+    (((from != 1) & (to!=1)) -> ((next(stations[1]) = stations[1]))) &
+    (((from != 2) & (to!=2)) -> ((next(stations[2]) = stations[2]))) &
+    (((from != 3) & (to!=3)) -> ((next(stations[3]) = stations[3]))) ;
+  
+  
+predicate swapAux(Int(0..3) from, Int(0..3) fromVal, Color fromColor, Int(0..3) to, Color[4] toStations):
+  
+  (((from = fromVal) & (to = 0)) -> (next(fromColor) = stations[0] & next(stations[0]) = fromColor)) &
+  (((from = fromVal) & (to = 1)) -> (next(fromColor) = stations[1] & next(stations[1]) = fromColor)) &
+  (((from = fromVal) & (to = 2)) -> (next(fromColor) = stations[2] & next(stations[2]) = fromColor)) &
+  (((from = fromVal) & (to = 3)) -> (next(fromColor) = stations[3] & next(stations[3]) = fromColor)) ;
+
+ 
+define
+  swap :=
+    swapAux(from, 0, stations[0], to, stations) &
+    swapAux(from, 1, stations[1], to, stations) &
+    swapAux(from, 2, stations[2], to, stations) &
+    swapAux(from, 3, stations[3], to, stations) ;
+
+/*
+ * The stations are ordered such that the non-existing stations are to the end 
+ */
+firstStationsExist :=
+  ((stations[0] = NOT) -> (stations[1] = NOT)) &
+  ((stations[1] = NOT) -> (stations[2] = NOT)) &
+  ((stations[2] = NOT) -> (stations[3] = NOT)) ;
+    
+ 
+ somethingEmpty := 
+ 
+    (stations[0] = EMPTY) |
+    (stations[1] = EMPTY) |
+    (stations[2] = EMPTY) |
+    (stations[3] = EMPTY) ;
+  
+  toIsEmpty :=
+    !somethingEmpty |
+    ((stations[0] = EMPTY) & (to = 0)) |
+    ((stations[1] = EMPTY) & (to = 1)) |
+    ((stations[2] = EMPTY) & (to = 2)) |
+    ((stations[3] = EMPTY) & (to = 3)) ;
+  
+  
+   sorted :=
+      (stations[0] <= stations[1]) &
+      (stations[1] <= stations[2]) &
+      (stations[2] <= stations[3]) ;
+      
+   fromExists :=
+      exists(stations, from);
+   toExists :=
+      exists(stations, to);
+   
+   somethingExists :=
+      (stations[0] != NOT) |
+      (stations[1] != NOT) |
+      (stations[2] != NOT) |
+      (stations[3] != NOT) ;
+      
+  sortingAssumptions :=
+     firstStationsExist & somethingExists & !equal;
+         
+   equal :=
+      allEqual(stations,RED) |
+      allEqual(stations,GREEN) |
+      allEqual(stations,BLUE) ;
+
+
+predicate allEqual(Color[4] stations, Color color):
+  ((stations[0] = color) | (stations[0] = EMPTY) | (stations[0] = NOT)) &
+  ((stations[1] = color) | (stations[1] = EMPTY) | (stations[1] = NOT)) &
+  ((stations[2] = color) | (stations[2] = EMPTY) | (stations[2] = NOT)) &
+  ((stations[3] = color) | (stations[3] = EMPTY) | (stations[3] = NOT)) ;
+  
+predicate exists(Color[4] stations, Int(0..3) index):
+  (index = 0 & stations[0] != NOT) |
+  (index = 1 & stations[1] != NOT) |
+  (index = 2 & stations[2] != NOT) |
+  (index = 3 & stations[3] != NOT) ;
+  
+      
+/*
+ * some tests
+ * 
+ */
+ 
+define
+  blueArray :=
+    (stations[0] = BLUE) &
+    (stations[1] = BLUE) &
+    (stations[2] = BLUE) &
+    (stations[3] = BLUE) ;
+//    
+//  assumedArray :=
+//    
+//    (stations[0] = BLUE) &
+//    (stations[1] = GREEN) &
+//    (stations[2] = RED) &
+//    (stations[3] = BLUE) &
+//    (stations[4] = EMPTY) &
+//    (stations[5] = NOT_EXISTS) ;
+
+//asm GF blueArray;
+//asm G !initDone & next(initDone) -> !blueArray;
+//gar G blueArray;
+
+//asm GF blueArray;
+//gar GF !blueArray;
+
+//gar G (mode != WAITING) -> next(mode = WAITING);
+//gar G !working -> next(mode != WAITING);

@@ -1,0 +1,32 @@
+module Elevator
+		//ext obstacle : {CLEAR, BLOCKED};
+		env {LOWER,MIDDLE,UPPER,NONE} floor ;
+//		ext doorMot : {FWD, BWD, STP};
+		sys {FWD, BWD, STOP} elevMot ;
+
+//LTLSPEC -- safety requirement
+	//G (obstacle=BLOCKED -> !(elevMot = FWD & elevMot = FWD));
+	
+guarantee -- initial state
+	elevMot=STOP;
+	
+guarantee -- goal of forklift
+  GF (elevMot=FWD);
+
+//LTLSPEC -- stop at floor
+//	floor=LOWER & elevMot!=STOP | floor=UPPER & elevMot!=STOP -> elevMot=STOP;
+
+guarantee -- change direction at lower floor
+  GF (floor=LOWER->elevMot=FWD);
+	
+guarantee -- change direction at upper floor
+  GF (floor=UPPER->elevMot=BWD);
+	
+
+assumption
+    G (elevMot=STOP -> floor!=NONE);
+
+	
+	
+//LTLSPECENV
+//	G (elevMot = BWD) -> next(obstacle = CLEAR);

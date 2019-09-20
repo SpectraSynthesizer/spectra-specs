@@ -1,0 +1,266 @@
+import "../patterns/DwyerPatterns.spectra"
+module ParkingSpec      
+
+//TODO - add wall alignment while searching to optimize scanning
+
+env Int(0..5) frontSense;
+env Int(0..5) sideSense;
+env Status status; 
+env SideStatus sideStatus;
+env ColorCmd color;
+env boolean align; //Start steering to the left while parking until we are aligned.
+env boolean done; 
+
+sys MotorCmd driveMotor;
+sys MotorCmd steeringMotor;
+sys Int(0..5) velocity;
+sys Mode mode;
+
+ 
+type MotorCmd = {FWD, STOP, BWD, STRAIGHT, HARD_LEFT, LIGHT_LEFT, LIGHT_RIGHT, HARD_RIGHT};
+type Mode = {SEARCHING, SCANNING, PARKING, PARKED, EXIT};
+type Status = {PARALLEL, REVERSE, NONE};
+type SideStatus = {MIN_PARALLEL , MIN_REVERSE, NONE};
+type ColorCmd = {BLACK , GREEN , BLUE};
+
+define
+  valid_parking_spot := (status != NONE) & (color != BLUE) &(align = true)& (done = true);
+  stopping := driveMotor = STOP & velocity = 0;
+  forwarding := driveMotor = FWD & velocity > 0;
+  reversing := driveMotor = BWD & velocity > 0;
+  left := steeringMotor = LIGHT_LEFT | steeringMotor = HARD_LEFT;
+  right := steeringMotor = LIGHT_RIGHT | steeringMotor = HARD_RIGHT;
+  light_left_fwd := steeringMotor = LIGHT_LEFT & driveMotor = FWD;
+  light_left_bwd := steeringMotor = LIGHT_LEFT & driveMotor = BWD;
+  hard_left_fwd := steeringMotor = HARD_LEFT & driveMotor = FWD;
+  hard_left_bwd := steeringMotor = HARD_LEFT & driveMotor = BWD;
+  light_right_fwd := steeringMotor = LIGHT_RIGHT & driveMotor = FWD;
+  light_right_bwd := steeringMotor = LIGHT_RIGHT & driveMotor = BWD;
+  hard_right_fwd := steeringMotor = HARD_RIGHT & driveMotor = FWD;
+  hard_right_bwd := steeringMotor = HARD_RIGHT & driveMotor = BWD;
+  getCloser := (PREV(sideSense = 5) & (sideSense < 5)) | (PREV(sideSense = 4) & (sideSense < 4)) | (PREV(sideSense = 3) & (sideSense < 3)) | (PREV(sideSense = 2) & (sideSense < 2)) | (PREV(sideSense = 1) & (sideSense < 1));
+  sideways := light_left_fwd | light_left_bwd | hard_left_fwd | hard_left_bwd | light_right_fwd | light_right_bwd | hard_right_fwd | hard_right_bwd;
+  fwd_turning := (steeringMotor = HARD_LEFT | steeringMotor = HARD_RIGHT | steeringMotor = LIGHT_LEFT | steeringMotor = LIGHT_RIGHT) & forwarding;
+  bwd_turning := (steeringMotor = HARD_LEFT | steeringMotor = HARD_RIGHT | steeringMotor = LIGHT_LEFT | steeringMotor = LIGHT_RIGHT) & reversing;
+
+//Guarantees
+
+//General Guarantees
+//Initially we are not parked but starting a parking
+gar mode = SEARCHING  & stopping & steeringMotor = STRAIGHT; 
+
+//Enter and exit the parking spot eventually
+gar GF (mode = PARKED | mode = EXIT);
+
+//TODO - add that these only apply to when searching and scanning(?)
+//Make sure we don't crash while moving forward 
+gar dontCrashFront: G ((frontSense <= 2) & (mode !=EXIT)) -> (((driveMotor != FWD) | steeringMotor = HARD_LEFT & next(mode = SEARCHING)));
+
+//gar dontCrashSide: G (sideSense < 1 & mode = SEARCHING) -> (steeringMotor = LIGHT_LEFT | steeringMotor = HARD_LEFT);
+
+//Anti-silliness protection
+gar G steeringMotor != FWD & steeringMotor != BWD & steeringMotor != STOP;
+
+gar G driveMotor != HARD_LEFT & driveMotor != LIGHT_LEFT & driveMotor != STRAIGHT & driveMotor != LIGHT_RIGHT & driveMotor != HARD_RIGHT;
+
+//While moving backward always do so in a slow and controlled manner
+gar slowSpeed: G ((mode = SCANNING | mode = PARKING | mode = EXIT) /*| mode = EXIT*/ & driveMotor != STOP | reversing) -> (velocity = 1);
+
+//TODO - is this search-only?
+//The car should never stop dead in its track if the velocity is not zero.
+gar two: pRespondsToS(driveMotor = STOP, driveMotor != STOP | next(velocity) < velocity | velocity=0);
+
+//TODO do I really need this?
+gar one: pRespondsToS(driveMotor != STOP, driveMotor = STOP | next(velocity) > velocity | velocity=5);
+
+
+
+
+
+//Searching and scanning 
+
+gar G (mode = SCANNING) -> PREV(mode != PARKED);
+
+gar G (mode = SCANNING) -> PREV(mode != PARKING);
+
+//While scanning if we are not parking and the frontSense reading is clear enough , keep heading straight and forward
+gar G ((mode = SCANNING) & (status = NONE   | (status = REVERSE & sideStatus = MIN_PARALLEL)) & frontSense > 2) -> (steeringMotor = STRAIGHT & driveMotor = FWD);
+
+//While SEARCHING if the sideSense reading is clear enough, keep heading straight and forward
+gar G ((mode = SEARCHING) & status = NONE) -> (next(driveMotor) = FWD);
+
+gar //if While scanning there is no enough place to park 
+G (mode = SCANNING & sideStatus = NONE) -> (next(mode) = SEARCHING);
+
+//While scanning if the sideStatus reading is clear enough, keep scanning.
+gar G (mode = SCANNING  & status = NONE  & sideStatus != NONE & frontSense >2 ) -> (next(mode) = SCANNING);
+
+//there is no enough place to park , start SEARCHING again
+gar G (mode = SEARCHING & sideStatus = NONE) -> (next(mode) = SEARCHING);
+
+//start scanning if the sideStatus is sufficiently clear
+gar startScanning: G (mode = SEARCHING & sideStatus != NONE & frontSense >2) -> (next(mode) = SCANNING); 
+
+//if side sensor is enough for parallel parking, keep scanning until status is parallel.
+gar noMatch: G  (mode = SCANNING & status = REVERSE & sideStatus = MIN_PARALLEL & frontSense >2) -> (next(mode) = SCANNING);
+
+//Change the speed of the car according to its distance from an obstacle
+gar G (frontSense = 5 & mode = SEARCHING & driveMotor = FWD) -> (velocity = 5);
+gar G (frontSense = 4 & mode = SEARCHING & driveMotor = FWD) -> (velocity = 4);
+gar G (frontSense = 3 & mode = SEARCHING & driveMotor = FWD) -> (velocity = 3);
+gar G (frontSense = 2 & mode = SEARCHING & driveMotor = FWD) -> (velocity = 2);
+gar G (frontSense = 1 & mode = SEARCHING & driveMotor = FWD) -> (velocity = 1);
+  
+  
+  
+  
+  
+//Start Parking
+//Once the status changes to PARALLEL or REVERSE and we were scanning, stop
+gar parkinglPlace: G  (mode = SCANNING & ((status = REVERSE & sideStatus = MIN_REVERSE) | (status = PARALLEL & sideStatus = MIN_PARALLEL)) ) -> (next(stopping) & (next(mode) = PARKING) & steeringMotor = STRAIGHT);
+
+
+
+
+//Parking
+//When in parking mode we should keep at it until we are done
+
+gar G (mode = PARKING & align = false) -> (next(mode) = PARKING);
+
+gar G (mode = PARKING) -> PREV(mode != SEARCHING);
+
+gar G (mode = PARKING) -> PREV(mode != PARKED);
+
+gar G (mode = PARKING) -> PREV(mode != EXIT);
+
+//start enter
+gar G(mode = PARKING & align = false & done = false) -> (next(steeringMotor)= HARD_RIGHT & next(driveMotor) = BWD);
+
+//continue parallel parking
+gar G(mode = PARKING & status = PARALLEL & align = true & done = false) -> (next(steeringMotor) = HARD_LEFT & next(driveMotor) = BWD & next(velocity) =1 & next(mode) = PARKING) ;
+
+//continue reverse parking
+gar G(mode = PARKING & status = REVERSE & align = true & done = false) -> (next(steeringMotor) = STRAIGHT & next(driveMotor) = BWD & next(velocity) =1 & next(mode) = PARKING) ;
+
+gar G(mode = PARKING & valid_parking_spot) -> (next(mode) = PARKED);
+//Once we are parked we should stop moving.
+gar G(mode = PARKED -> stopping);
+
+gar G(mode = PARKED) -> (next(mode) = EXIT);
+
+gar G (mode = PARKED) -> PREV(mode != SEARCHING);
+
+gar G (mode = PARKED) -> PREV(mode != SCANNING);
+
+gar G (mode = PARKED) -> PREV(mode != EXIT);
+
+//Exit parking
+
+//start exit
+gar G (mode = PARKING & done = true & align = true & color = BLUE ) -> (next(mode) = EXIT ) & next(stopping);
+
+//start searching again after exit
+gar G (mode = EXIT & done = true & align = true ) -> (next(mode) = SEARCHING ) & next(stopping);
+
+//exit from reverse parking
+gar G (mode = EXIT & align = false) -> (next(mode) = EXIT);
+
+//if we don't have enough space to exit, stop until frontSense is clear enough
+gar G (mode = EXIT & next(frontSense<=2) & done = false) -> (next(mode) = EXIT)  & next(stopping);
+
+
+gar 
+G(mode = EXIT & status = REVERSE & align = false & done = false & next(frontSense) >2 ) -> (next(steeringMotor)= STRAIGHT & next(driveMotor) = FWD);
+
+gar
+G(mode = EXIT & status = REVERSE & align = true & done = false & next(frontSense) >2 ) -> (next(steeringMotor) = HARD_RIGHT & next(driveMotor) = FWD & next(velocity) =1 & next(mode) = EXIT ) ;
+
+//exit from parallel parking
+gar
+G(mode = EXIT & status = PARALLEL & align = false & done = false & next(frontSense) >2) -> (next(steeringMotor)= LIGHT_LEFT& next(driveMotor) = FWD);
+
+gar
+G(mode = EXIT & status = PARALLEL & align = true & done = false & next(frontSense) >2) -> (next(steeringMotor) = LIGHT_RIGHT & next(driveMotor) = FWD & next(velocity) =1 & next(mode) = EXIT ) ;
+
+
+gar G (mode = EXIT) -> PREV(mode != SEARCHING);
+
+gar G (mode = EXIT) -> PREV(mode != SCANNING);
+
+
+//Assumptions
+//General Assumptions
+//Initial assumption
+asm (status = NONE) & (color = BLACK) & (sideSense > 0 | frontSense>0) & (align = false) & (done = false) ;
+
+asm G (forwarding & (mode !=PARKING) & (mode !=EXIT) & (steeringMotor) = STRAIGHT) -> (next(frontSense) <= frontSense);
+
+asm G (reversing  & (mode !=PARKING ))-> (next(frontSense) >= frontSense);
+
+asm G (left & reversing  & (mode !=PARKING) ) -> (next(sideSense) >= sideSense);
+
+asm G (right & reversing  & (mode !=PARKING)) -> (next(sideSense) <= sideSense);
+
+asm pRespondsToS(reversing, !reversing | (next(frontSense) = frontSense+1) | frontSense = 5);
+
+asm pRespondsToS(forwarding, !forwarding | (next(frontSense) = frontSense-1) |frontSense = 0);
+
+asm pRespondsToS(left & reversing, !left | !reversing | (next(sideSense) = sideSense+1) | sideSense = 5);
+
+asm pRespondsToS(right & reversing, !right | !reversing | (next(sideSense) = sideSense-1) | sideSense = 0);
+
+asm pRespondsToS(left & forwarding, !left | !forwarding | (next(sideSense) = sideSense+1) | sideSense = 5);
+
+asm pRespondsToS(right & forwarding, !right | !forwarding | (next(sideSense) = sideSense-1) | sideSense = 0);
+
+asm G (stopping & (mode!=PARKING) & (mode != PARKED) & (mode!=EXIT)) -> (next(sideSense) = sideSense & next(frontSense) = frontSense & next(color)=color);
+
+//TODO - should these to be limited to searching and scanning?
+asm GF sideSense > 0 | stopping;
+asm GF frontSense > 0 | stopping;
+
+
+
+//Searching & Scanning
+asm G (mode = SEARCHING & status = NONE) -> (next(status = NONE));
+
+//while SCANING we will find enough place to park eventually
+asm pRespondsToS(mode = SCANNING, ((status = PARALLEL & sideStatus = MIN_PARALLEL) | (status = REVERSE & sideStatus = MIN_REVERSE)));
+
+//continuousness  of moving backwards
+asm pRespondsToS(driveMotor = BWD & mode != PARKING, (next(frontSense) = frontSense +1 | next(frontSense) = frontSense));
+
+//continuousness  of moving forward
+asm pRespondsToS(driveMotor = FWD & mode != PARKING, (next(frontSense) = frontSense -1 | next(frontSense) = frontSense));
+
+//Once a parking spot has been found it wont move. Hopefully.
+asm ParallelparkingSpotsDontDisappear: G (status = PARALLEL & (mode = SCANNING | mode = PARKING | mode = EXIT)) -> (next(status) = PARALLEL);
+
+asm ReverseparkingSpotsScanningMode: G (status = REVERSE & (mode = SCANNING)) -> (next(status) = REVERSE | next(status) = PARALLEL);
+
+asm ReverseparkingSpotsDontDisappear: G (status = REVERSE & (mode = PARKING | mode = EXIT)) -> (next(status) = REVERSE);
+
+
+
+
+//Parking and parking
+//Assume that a parking a large enough parking spot to contain the car exists
+asm aParkingSpotExists: GF ((status = PARALLEL & sideStatus = MIN_PARALLEL) | (status = REVERSE & sideStatus = MIN_REVERSE));
+
+//TODO - ask Or why the stopping is needed
+//Assume that there is a green parking spot
+asm GF ((valid_parking_spot & mode = PARKED) | stopping);
+
+//By driving backwards and to the right, eventauly we will get a new color.
+asm pRespondsToS((reversing) & (right) & (align = false), (align = true) | !((reversing) & (right))); //Take 1
+
+asm pRespondsToS((reversing) & (left) & (align = true), (color != BLUE) | !((reversing) & (left))); //Take 2
+//GF ((reversing) & (right)) -> (color != BLACK); //Take 2
+
+
+asm pRespondsToS((mode = PARKING & align =false & done = false), ((align = true) & (done = true))); //Take 1
+
+asm G (mode = EXIT | mode = PARKING | mode = PARKED)  -> (next(status != NONE) & next(sideStatus)!= NONE);
+
+asm G (align = false) -> (next(done) = false);
+

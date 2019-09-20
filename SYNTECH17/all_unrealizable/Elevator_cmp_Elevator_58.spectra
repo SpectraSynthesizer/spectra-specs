@@ -1,0 +1,219 @@
+import "../patterns/DwyerPatterns.spectra"
+
+module Elevator
+
+
+type TouchSensorC={ON,OFF};
+type DoorMotorC={CLOSE,STOP,OPEN};
+type LiftMotorC={UP,STOP,DOWN};
+type LampC={ON,OFF};
+type VelocityC={ZERO,SLOW,FAST};
+
+
+
+env boolean[4] calls_c;
+env boolean seconds3;
+//env boolean seconds5;
+env boolean seconds20;
+//env boolean shabbatMode;
+
+
+
+sys LiftMotorC liftM_c;
+sys DoorMotorC doorM_c;
+sys LampC lamp_c;
+sys boolean countTime_c;
+
+
+aux boolean[4] memCalls;
+
+define
+  goingUp             := (liftM_c=UP);
+  goingDown           := (liftM_c=DOWN);
+  moving              := (goingUp|goingDown);
+  openningDoors       := (doorM_c=OPEN);
+  closingDoors        := (doorM_c=CLOSE);
+  keepDoorsState      := (doorM_c=STOP);
+  lightIsOn           := (lamp_c=ON);
+  floor0              := (aboveTheGround=0);
+  floor1              := (aboveTheGround=3);
+  floor2              := (aboveTheGround=6); 
+  floor3              := (aboveTheGround=9);
+  //atFloor             := (floor0|floor1|floor2|floor3); 
+  atDesignatedFloor   := (floor0&memCalls[0])|(floor1&memCalls[1])|(floor2&memCalls[2])|(floor3&memCalls[3]);
+  doorsAreFullyOpened := (distanceBetweenDoors=9);
+  doorsAreClosed      := (distanceBetweenDoors=0); 
+  anyCalls            := (memCalls[0]|memCalls[1]|memCalls[2]|memCalls[3]);
+  edged_floor         := (aboveTheGround=0|aboveTheGround=9);
+  currentFloorEqualsLockingFloor := (!(currentFloor<lockingFloor | currentFloor>lockingFloor));
+
+predicate changeMonitorByOperation(boolean cond,Int(0..9) m,Int(0..2) d):
+  cond<->(next(m)=(m+d-1)); // nice but doesn't save space :)
+  // I think not using this predicate will increase readability (especially
+  // due to the minus 1) but I also don't really mind. Regarding the steps
+  // instead 9 and 2 we better have constant defines, for example
+  // DISTANCE_BETWEEN_FLOORS etc'. So we won't have to rewrite things
+  // once we know the real value, based on real life experiments. 
+
+ 
+monitor Int(0..9) aboveTheGround
+{
+  (aboveTheGround=0);
+  G changeMonitorByOperation(goingUp,aboveTheGround,2);
+  G changeMonitorByOperation(goingDown,aboveTheGround,0);
+  G changeMonitorByOperation(!moving,aboveTheGround,1);
+  
+}
+
+
+monitor Int(0..9) distanceBetweenDoors
+{
+  (distanceBetweenDoors=0);
+  G changeMonitorByOperation(openningDoors,distanceBetweenDoors,2);
+  G changeMonitorByOperation(closingDoors,distanceBetweenDoors,0);
+  G changeMonitorByOperation(keepDoorsState,distanceBetweenDoors,1);
+}
+
+
+monitor boolean returnTo0
+{
+   (!returnTo0);
+   G (!floor0) & (((!anyCalls)&(seconds20))|returnTo0)<->next(returnTo0); 
+}
+
+monitor boolean handleFloor
+{
+  //(!takeCareOfFloor);
+  G (atDesignatedFloor&(!moving))->handleFloor;
+  //G (takeCareOfFloor&(!doorsAreClosed)&next(doorsAreClosed))<->(next(takeCareOfFloor)!=takeCareOfFloor);
+  G (handleFloor&(distanceBetweenDoors=1)&closingDoors)<->(next(!handleFloor));
+}
+
+monitor Int(0..3) currentFloor
+{
+  (currentFloor=0);
+  G ((floor0 -> (currentFloor=0)) & (floor1 -> (currentFloor=1)) &
+    (floor2 -> (currentFloor=2)) & (floor3 -> (currentFloor=3)));
+}
+
+monitor Int(0..3) currentCall
+{
+  (currentCall=0);
+  G ((calls_c[0] -> (currentCall=0)) & (calls_c[1] -> (currentCall=1)) &
+    (calls_c[2] -> (currentCall=2)) & (calls_c[3] -> (currentCall=3)));
+    // if 2 buttons are being pressed at the same time, it may cause a
+    // problem, so I know that we MAY change this monitor in future, in
+    // order to overcome this hassle. Actually I already have an idea
+    // but I don't have time to implement that till Monday :)
+}
+
+monitor boolean dontGoUp // direction lock (down or stop)
+{
+  (dontGoUp=false);
+  G (currentFloor>currentCall) -> dontGoUp;
+}
+
+monitor boolean dontGoDown // direction lock (up or stop)
+{
+  (dontGoDown=false);
+  G (currentFloor<currentCall) -> dontGoDown;
+}
+
+monitor Int(0..3) lockingFloor // till we reach this floor,
+                               // the lock won't be unlocked.
+                               // this is an *indirect* implementation of
+                               // a 'queue'.
+{
+  (lockingFloor=3);
+  G ((dontGoUp & PREV(!dontGoUp)) | (dontGoDown & PREV(!dontGoDown))) -> (lockingFloor=currentFloor);
+}
+
+gar init_motors:
+  (!moving)&(keepDoorsState)&(!lightIsOn);
+  
+gar setZeroCalls:
+  (!memCalls[0])&(!memCalls[1])&(!memCalls[2])&(!memCalls[3]);
+
+
+gar doorsAreClosedWhileMoving:
+  G(moving -> (doorsAreClosed&keepDoorsState));
+
+gar ifFloor0DontGoDown:
+  G(floor0->!(goingDown));
+  
+gar ifFloor3DontGoUp:
+  G(floor3->!(goingUp));
+  
+gar lightBlinksWhileMoving: // btw we better ask them whether they really
+                            // want it to 'blink', as that means on\off 
+                            // constantly. can be implemented in the cmp file,
+                            // yet probably not required. They probably meant
+                            // that the light should be On while moving...
+  G(moving->(next(lightIsOn)));
+
+gar lightIsOffWhileNotMoving:
+  G((!moving)->(next(!lightIsOn)));
+
+gar ifCallsFromFloor0GoTo0:
+  pRespondsToS(calls_c[0],floor0);
+
+gar ifCallsFromFloor1GoTo1:
+  pRespondsToS(calls_c[1],floor1);
+  
+gar ifCallsFromFloor2GoTo2:
+  pRespondsToS(calls_c[2],floor2);
+  
+gar ifCallsFromFloor3GoTo3:
+  pRespondsToS(calls_c[3],floor3);
+
+gar dontChangeDirectionWithoutStopping:
+  G((goingUp->next(!goingDown))&(goingDown->next(!goingUp)));
+ 
+gar rememberCalls:
+  G   (calls_c[0]->next(memCalls[0]))&
+      (calls_c[1]->next(memCalls[1]))&
+      (calls_c[2]->next(memCalls[2]))&
+      (calls_c[3]->next(memCalls[3]));
+
+gar ifMovingDontStopTillDesignatedFloor:
+  G moving->next((!moving)<->(atDesignatedFloor|edged_floor));
+    
+ 
+gar ifAtDesignatedFloorRemoveCall:
+    G ((floor0&!calls_c[0])->next(!memCalls[0]))&
+      ((floor1&!calls_c[1])->next(!memCalls[1]))&
+      ((floor2&!calls_c[2])->next(!memCalls[2]))&
+      ((floor3&!calls_c[3])->next(!memCalls[3]));
+ 
+ 
+gar dontMoveWithoutReason:
+  G ((!anyCalls)&(!returnTo0))->!moving;//&(!shabbatMode))->!moving;
+
+gar startCountingTime:
+  G ((!(anyCalls|floor0))|(handleFloor&(!moving)))<->countTime_c;
+
+gar returnTo0WhenRequired:
+  //G (returnTo0&(!floor0))->goingDown;
+  pBecomesTrue_betweenQandR(floor0,returnTo0,goingUp|!moving);
+  
+asm envDoesntCountTimeWhenNotRequired:
+  G (!countTime_c)->(!next(seconds20|seconds3));
+
+asm not20SecondsBefore3Seconds:
+  G (!seconds3)->(!seconds20);
+  
+gar openDoorsAtDesignatedFloorBeforeMoving:
+  pBecomesTrue_betweenQandR(doorsAreFullyOpened,atDesignatedFloor&(!moving),moving|keepDoorsState|closingDoors);
+
+asm openDoorsAtFloorThatCalledIn3Seconds:
+  pBecomesTrue_betweenQandR(seconds3,atDesignatedFloor&(!moving),!doorsAreClosed);
+
+gar dontChangeDirectionTillLockingFloorIsBeingVisited:
+G ((dontGoUp & !currentFloorEqualsLockingFloor) -> next(!goingUp)) &
+  ((dontGoDown & !currentFloorEqualsLockingFloor) -> next(!goingDown));
+
+gar releaseDirectionLocks:
+G ((dontGoUp & currentFloorEqualsLockingFloor) -> !dontGoUp) &
+  ((dontGoDown & currentFloorEqualsLockingFloor) -> !dontGoDown);
+
+  

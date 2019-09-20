@@ -1,0 +1,78 @@
+module TrafficLightPedButton
+
+//Environment controlled input variables (sensors)
+env boolean carNorthStraight;
+env boolean carNorthLeft;
+
+env boolean carSouthStraight;
+env boolean carSouthLeft;
+
+env boolean carEastStraight;
+env boolean carEastLeft;
+
+env boolean carWestStraight;
+env boolean carWestLeft;
+
+//System controlled output variables (lights)
+sys boolean greenNorthStraight;
+sys boolean greenNorthLeft;
+            
+sys boolean greenSouthStraight;
+sys boolean greenSouthLeft;
+            
+sys boolean greenEastStraight;
+sys boolean greenEastLeft;
+            
+sys boolean greenWestStraight;
+sys boolean greenWestLeft;
+
+//general assumptions about cars presence
+asm GF carNorthStraight;
+asm GF carNorthLeft;
+
+asm GF carSouthStraight;
+asm GF carSouthLeft;
+    
+asm GF carEastStraight;
+asm GF carEastLeft;
+    
+asm GF carWestStraight;
+asm GF carWestLeft;
+
+predicate mutualExclusion(boolean greenA, boolean greenB): !(greenA & greenB);
+
+//safety guarantees for avoiding collisions
+gar G mutualExclusion(greenNorthStraight, greenEastStraight) ;
+gar G mutualExclusion(greenNorthStraight, greenEastLeft) ;
+gar G mutualExclusion(greenNorthStraight, greenWestStraight) ;
+gar G mutualExclusion(greenNorthStraight, greenWestLeft) ;
+gar G mutualExclusion(greenNorthStraight, greenSouthLeft) ;
+gar G mutualExclusion(greenNorthLeft, greenEastStraight) ;
+gar G mutualExclusion(greenNorthLeft, greenEastLeft) ;
+gar G mutualExclusion(greenNorthLeft, greenWestStraight) ;
+gar G mutualExclusion(greenNorthLeft, greenWestLeft) ;
+gar G mutualExclusion(greenNorthLeft, greenSouthStraight) ;
+gar G mutualExclusion(greenEastStraight, greenSouthStraight) ;
+gar G mutualExclusion(greenEastStraight, greenSouthLeft) ;
+gar G mutualExclusion(greenEastStraight, greenWestLeft) ;
+gar G mutualExclusion(greenEastLeft, greenSouthStraight) ;
+gar G mutualExclusion(greenEastLeft, greenSouthLeft) ;
+gar G mutualExclusion(greenEastLeft, greenWestStraight) ;
+gar G mutualExclusion(greenWestStraight, greenSouthStraight) ;
+gar G mutualExclusion(greenWestStraight, greenSouthLeft) ;
+gar G mutualExclusion(greenWestLeft, greenSouthLeft) ;
+gar G mutualExclusion(greenWestLeft, greenSouthStraight) ;
+
+//all cars will eventually cross
+gar GF greenNorthStraight & carNorthStraight;
+gar GF greenNorthLeft & carNorthLeft;
+
+gar GF greenSouthStraight & carSouthStraight;
+gar GF greenSouthLeft & carSouthLeft;
+
+gar GF greenEastStraight & carEastStraight;
+gar GF greenEastLeft & carEastLeft;
+
+gar GF greenWestStraight & carWestStraight;
+gar GF greenWestLeft & carWestLeft;
+

@@ -1,0 +1,111 @@
+module ControllerSpec
+
+    env { CLEAR, BLOCKED } sense ;
+    env boolean emgOff ;
+
+    sys { FWD, STOP, BWD } mLeft ;
+    sys { FWD, STOP, BWD } mRight ;
+    sys { LIFT, DROP, NIL } lift ;
+
+    sys boolean spec_loaded ;
+    sys boolean spec_droppedNotClear ;
+
+  define
+    backing := mLeft = BWD & mRight = BWD;
+    stopping := mLeft = STOP & mRight = STOP;
+    turning := mLeft = BWD & mRight = FWD;
+    forwarding := mLeft = FWD & mRight = FWD;
+    
+    dropping := lift = DROP;
+    lifting := lift = LIFT;
+
+  // safety restrictions of environment
+  /////////////////////////////////////
+
+  // block if going forward to next station
+  assumption
+  respondsTo(forwarding,(sense=BLOCKED|backing|stopping));
+    
+  // always unblock if backing or turning
+  assumption
+  respondsTo((backing|turning),(sense=CLEAR|forwarding|stopping));
+
+  //unblock if lifting
+  assumption
+  respondsTo(lifting,(sense=CLEAR));
+
+
+  // safety of system
+  ///////////////////////////////////////
+
+  // initial state
+  guarantee
+    mLeft = STOP & mRight = STOP & lift = NIL & ! spec_loaded & ! spec_droppedNotClear;
+
+  // controlling state of var spec_loaded
+  //////////////////////////////////////
+  guarantee
+    G (lifting -> next (spec_loaded));
+
+  guarantee
+    G (dropping -> ! next (spec_loaded));
+
+  guarantee
+    G (lift = NIL -> next (spec_loaded) = spec_loaded);
+  //////////////////////////////////////
+  
+  // restricting lifting action based on var spec_loaded
+  guarantee
+    G (spec_loaded -> !lifting);
+
+  guarantee
+    G (!spec_loaded -> !dropping);
+
+  // controlling state of var spec_droppedNotClear
+  //////////////////////////////////////
+  // dropping sets flag
+  guarantee
+    G (dropping -> next (spec_droppedNotClear));
+  // backing up when not loaded or lifting clears the flag
+  guarantee  
+    G ((backing & !spec_loaded) | lifting -> ! next (spec_droppedNotClear));
+  // if not set and not cleared flag is preserved
+  guarantee
+    G (!((backing & !spec_loaded) | lifting) & !dropping -> 
+          spec_droppedNotClear = next (spec_droppedNotClear));          
+  // restricting moves based on flag
+  guarantee
+    G (spec_droppedNotClear -> ! (mLeft = FWD | mRight = FWD));
+
+
+  // don't drop or lift if not at a station (sense = clear)
+  guarantee
+    G (sense = CLEAR -> lift = NIL);
+    
+  // don't move while lifting
+  guarantee
+    G (lift != NIL -> stopping);
+
+  // dont run into obstacles
+  guarantee
+    G (sense = BLOCKED -> ! forwarding);
+
+  // only turn, go, stop or back
+  guarantee
+    G (forwarding | turning | stopping | backing);
+
+  guarantee // do nothing of stopped
+    G (emgOff -> (stopping & lift=NIL)); 
+
+    // liveness of system
+    ///////////////////////////////////////
+
+  guarantee
+  GF ((lift=DROP)|emgOff);
+  
+pattern respondsTo(trigger, response) {
+  var boolean responded;
+  responded;
+  G (next(responded) iff (response or responded and !trigger));
+  GF (responded);
+}

@@ -1,0 +1,45 @@
+
+import "../patterns/DwyerPatterns.spectra"
+module VehicleSpec			
+
+env FrontDistance sense;
+env SideDistance parking; 
+env boolean color;
+env boolean emgOff;
+
+sys MotorCmd driveMotor;
+sys SenseMotorCmd senseMotor; 
+sys Int(0..90) steeringMotor; 
+
+type SenseMotorCmd = {DRIVE, REVERSE};
+type MotorCmd = {FWD, STOP, BWD};
+type FrontDistance = {CLEAR, FAR, MEDIUM, CLOSE ,BLOCKED};
+type SideDistance = {CLOSE, MEDIUM, FAR};
+
+define
+  stopping := driveMotor = STOP ;
+  forwarding := driveMotor = FWD & steeringMotor = 45 & senseMotor = DRIVE;
+  leftTurning := steeringMotor < 45  & driveMotor != STOP;
+  rightTurning := steeringMotor > 45  & driveMotor != STOP;  
+  reversing := senseMotor = REVERSE & driveMotor = BWD;
+  parked := parking = CLOSE & driveMotor = STOP & steeringMotor = 45;
+    
+      
+guarantee initialStop:
+  stopping;
+
+guarantee dontCrashFront:
+  G (((sense = BLOCKED) & (senseMotor =DRIVE))  -> ! forwarding);
+  
+guarantee dontCrashBack:  
+  G (((sense = BLOCKED) & (senseMotor = REVERSE))  -> ! reversing);
+  
+
+guarantee 
+  GF forwarding;
+
+
+assumption canGetClear:
+  pRespondsToS(leftTurning | rightTurning, sense = CLEAR);
+
+

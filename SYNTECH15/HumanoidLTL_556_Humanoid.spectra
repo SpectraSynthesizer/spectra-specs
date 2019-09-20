@@ -1,0 +1,140 @@
+module Humanoid
+		env {CLEAR, BLOCKED} Obstacle ;
+		env {QUIET, NOISE} Noise ;
+		env {ONTRACK,LOST} Heading;
+		sys {FWD, BWD, STOP, TURN_FWD, TURN_BWD, CALIB_TURN, CALIB_FWD} LeftMotor ;
+		sys {FWD, BWD, STOP, TURN_FWD, TURN_BWD, CALIB_TURN, CALIB_FWD} RightMotor ;
+		sys {FWD, BWD, STOP} HeadMotor ;
+		sys {FWD, BWD, TURN_LEFT_1, TURN_LEFT_2} spec_nextMoveMode ;
+		sys {Q0,Q1,Q2,Q3} spec_state ;
+		sys {M0,M1,M2} spec_search ;
+		
+//to prevant robot from going FWD<-->BWD indefinitely 
+//////////////////////////////////////////////
+guarantee
+	spec_search = M0;
+	
+guarantee 
+	G((spec_state = Q0 & spec_nextMoveMode = FWD & next(spec_nextMoveMode = BWD)) -> next(spec_state = Q1));
+
+guarantee 
+	G((spec_state = Q1 & spec_nextMoveMode = BWD & next(spec_nextMoveMode = FWD)) -> next(spec_state = Q2));
+	
+guarantee
+	G((spec_state = Q2 & spec_nextMoveMode = FWD & next(spec_nextMoveMode = BWD)) -> next(spec_state = Q3));
+
+guarantee 
+	G((spec_state = Q1 & next(spec_nextMoveMode = BWD)) -> (next(spec_state = Q1)));
+
+guarantee 
+	G((spec_state = Q2 & next(spec_nextMoveMode = FWD)) -> (next(spec_state = Q2)));
+	
+guarantee
+	G(( (spec_nextMoveMode = TURN_LEFT_1) | (spec_nextMoveMode = TURN_LEFT_1)) -> next(spec_state = Q0));
+	
+guarantee
+	G(!(spec_state = Q3));
+	
+//turn to degree
+/*LTLSPEC
+	G ((Noise = NOISE & Heading = LOST) -> next(spec_search = M1));
+	
+LTLSPEC
+	G ((Heading = LOST & spec_search = M1) -> next(spec_search = M1));
+
+LTLSPEC
+	G ((Heading = ONTRACK | (Noise = QUIET & spec_search = M0)) -> next(spec_search = M0));
+
+
+//////////////////////////////////////////////
+LTLSPEC
+	G((spec_search = M1) -> ( spec_nextMoveMode = TURN_LEFT_1  | spec_nextMoveMode = TURN_LEFT_2));
+*/
+
+guarantee
+	G(HeadMotor = STOP);
+	
+guarantee 
+	G ((spec_search = M0 & spec_nextMoveMode = FWD & Noise = NOISE & Heading = LOST) ->
+		(next(spec_search = M1) & next(spec_nextMoveMode = FWD)));
+
+guarantee
+	G((spec_search = M1) -> next(spec_search = M2) & next(spec_nextMoveMode = TURN_LEFT_1));
+	
+guarantee
+	G((spec_search = M2 & Heading = LOST) -> 
+		(next(spec_search = M2) & (spec_nextMoveMode = TURN_LEFT_1 | spec_nextMoveMode = TURN_LEFT_2)));
+
+guarantee
+	G((spec_search = M2 & Heading = ONTRACK) -> next(spec_search = M0));
+
+	
+guarantee
+	G(((Obstacle = BLOCKED) & !(Y(Y(spec_nextMoveMode = TURN_LEFT_2)))) -> (!(spec_nextMoveMode = FWD)));
+	
+guarantee
+	G((Y(spec_nextMoveMode = BWD) & (spec_nextMoveMode = FWD)) <-> (LeftMotor = FWD & RightMotor = BWD));
+
+guarantee
+	G((Y(spec_nextMoveMode = FWD) & (spec_nextMoveMode = BWD)) <-> (LeftMotor = BWD & RightMotor = FWD));
+	
+guarantee
+  GF (spec_nextMoveMode=FWD);
+	
+//LTLSPEC
+	//G ((spec_nextMoveMode = TURN_LEFT_2 & Obstacle = BLOCKED) -> next(spec_nextMoveMode = TURN_LEFT_1));
+//calibrate before turn
+guarantee
+	G ((spec_nextMoveMode = BWD) -> (Y(spec_nextMoveMode = FWD) | Y(spec_nextMoveMode = BWD)));
+
+guarantee
+	G (Y (spec_nextMoveMode = TURN_LEFT_2) -> !(spec_nextMoveMode = BWD));
+	
+
+guarantee
+	G  ((Y(spec_nextMoveMode = FWD) & spec_nextMoveMode = TURN_LEFT_1) <-> (LeftMotor = CALIB_TURN & RightMotor = CALIB_TURN));
+	
+guarantee
+	G ( (Y(spec_nextMoveMode = BWD)) -> (spec_nextMoveMode != TURN_LEFT_1)) ;
+//calibrate after turn
+guarantee
+	G  ((Y(spec_nextMoveMode = FWD) & Y(Y(spec_nextMoveMode = TURN_LEFT_2))) <-> (LeftMotor = CALIB_FWD & RightMotor = CALIB_FWD));
+
+guarantee
+	G (Y(spec_nextMoveMode = TURN_LEFT_1) <-> spec_nextMoveMode = TURN_LEFT_2);
+
+guarantee
+	G (Y(spec_nextMoveMode = TURN_LEFT_1) -> (LeftMotor = FWD & RightMotor = TURN_FWD));
+	
+guarantee
+	G (Y(spec_nextMoveMode = TURN_LEFT_2) -> (LeftMotor = BWD & RightMotor = TURN_BWD));
+	
+guarantee
+	G (!(Y(spec_nextMoveMode = TURN_LEFT_1) | Y(spec_nextMoveMode = TURN_LEFT_2)) -> !(LeftMotor = TURN_BWD | RightMotor = TURN_BWD | LeftMotor = TURN_FWD | RightMotor = TURN_FWD));
+
+assumption
+  respondsTo((spec_search=M2),(Heading=ONTRACK));
+
+/*LTLSPECENV
+	G((spec_search = M1) -> (Y(spec_nextMoveMode != BWD) & Y(Y(spec_nextMoveMode != TURN_LEFT_2))));
+*/
+assumption
+  respondsTo((spec_nextMoveMode!=FWD),(Obstacle=CLEAR));
+
+assumption
+	G((spec_nextMoveMode = BWD & Obstacle = CLEAR) -> (next(Obstacle != BLOCKED)));
+	
+assumption
+  GF ((Y(spec_nextMoveMode=TURN_LEFT_2)&Obstacle=CLEAR));
+
+//LTLSPECENV
+	//G((Y(Y(spec_nextMoveMode = TURN_LEFT_2)) & Y(spec_nextMoveMode = FWD)) -> Obstacle = CLEAR);
+
+//LTLSPECENV
+	//G F(Obstacle = CLEAR);
+pattern respondsTo(trigger, response) {
+  var boolean responded;
+  responded;
+  G (next(responded) iff (response or responded and !trigger));
+  GF (responded);
+}

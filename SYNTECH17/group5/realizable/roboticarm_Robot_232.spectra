@@ -1,0 +1,117 @@
+module t
+
+
+asm G next(task) = SORT;
+
+env Color s0;
+env Color s1;
+env Color s2;
+env Color s3;
+env Color s4;
+env Color s5;
+
+env Task task;
+
+
+
+type Color = {RED, GREEN, BLUE, EMPTY, NOT};
+
+
+type Task = {
+  SCAN,
+  SORT //sorts the stations using mode = MOVE, and then satisfies mode = NOTHING 
+  
+};
+
+
+
+
+
+asm startWithScan:
+  task = SCAN;
+
+
+
+
+      
+   
+   
+//all of the stations (excluding empty and non-existing stations)
+//contain balls are colored in 'color' (the input color) 
+predicate allEqual(Color color):
+  ((s0 = color) | (s0 = EMPTY) | (s0 = NOT)) &
+  ((s1 = color) | (s1 = EMPTY) | (s1 = NOT)) &
+  ((s2 = color) | (s2 = EMPTY) | (s2 = NOT)) &
+  ((s3 = color) | (s3 = EMPTY) | (s3 = NOT)) &
+  ((s4 = color) | (s4 = EMPTY) | (s4 = NOT)) &
+  ((s5 = color) | (s5 = EMPTY) | (s5 = NOT)) ;
+
+  
+ 
+   
+   
+  
+ 
+    
+   
+  
+  
+  
+  
+  
+     
+
+
+
+
+  
+define
+  strongAssumptions :=
+//    s0 = EMPTY &
+//    s1 = RED &
+//    s2 = BLUE &
+
+    s0 != EMPTY & s0 != NOT &
+    s1 != EMPTY & s1 != NOT &
+    s2 != EMPTY & s2 != NOT &
+    
+//    isColor(s0) &
+//    isColor(s1) &
+//    isColor(s2) &
+    s3 = NOT &
+    s4 = NOT &
+    s5 = NOT;
+
+  
+
+
+//asm strongAssumptions;  
+asm G next(strongAssumptions);
+
+  
+
+
+
+
+define
+  someColorExists :=
+    s0 = RED | s0 = GREEN | s0 = BLUE |
+    s1 = RED | s1 = GREEN | s1 = BLUE | 
+    s2 = RED | s2 = GREEN | s2 = BLUE |
+    s3 = RED | s3 = GREEN | s3 = BLUE |
+    s4 = RED | s4 = GREEN | s4 = BLUE |
+    s5 = RED | s5 = GREEN | s5 = BLUE ;
+    
+    
+
+asm G next(colorExists(EMPTY));
+
+
+
+predicate colorExists(Color color):
+  s0 = color |
+  s1 = color |
+  s2 = color |
+  s3 = color |
+  s4 = color |
+  s5 = color ;

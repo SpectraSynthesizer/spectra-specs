@@ -1,0 +1,140 @@
+import "./patterns/DwyerPatterns.spectra"
+
+module JunctionModule
+
+//Environment controlled input variables (sensors)
+
+// cars
+env boolean carNorthStraight;
+env boolean carNorthLeft;
+env boolean carNorthRight;
+env boolean carSouthStraight;
+env boolean carSouthLeft;
+env boolean carSouthRight;
+env boolean carEastStraight;
+env boolean carEastLeft;
+env boolean carEastRight;
+env boolean carWestStraight;
+env boolean carWestLeft;
+env boolean carWestRight;
+
+// pedestrians
+env boolean pedestrianEastFromNorthToSouthPressed;
+env boolean pedestrianEastFromSouthToNorthPressed;
+env boolean pedestrianWestFromNorthToSouthPressed;
+env boolean pedestrianWestFromSouthToNorthPressed;
+env boolean pedestrianNorthFromEastToWestPressed;
+env boolean pedestrianNorthFromWestToEastPressed;
+env boolean pedestrianSouthFromEastToWestPressed;
+env boolean pedestrianSouthFromWestToEastPressed;
+
+
+///////////////////////////////////////////// System controlled output variables (lights) /////////////////////////////////////////////
+
+// cars
+sys boolean greenNorthStraight;
+sys boolean greenNorthLeft;
+sys boolean greenNorthRight;
+sys boolean greenSouthStraight;
+sys boolean greenSouthLeft;
+sys boolean greenSouthRight;
+sys boolean greenEastStraight;
+sys boolean greenEastLeft;
+sys boolean greenEastRight;
+sys boolean greenWestStraight;
+sys boolean greenWestLeft;
+sys boolean greenWestRight;
+
+// pedestrians
+sys boolean greenNorthPedestrian;
+sys boolean greenSouthPedestrian;
+sys boolean greenEastPedestrian;
+sys boolean greenWestPedestrian;
+            
+// Waiting car eventually will get green light
+gar pRespondsToS(carNorthStraight, greenNorthStraight);
+gar pRespondsToS(carNorthLeft, greenNorthLeft);
+gar pRespondsToS(carNorthRight, greenNorthRight);
+gar pRespondsToS(carSouthStraight, greenSouthStraight);
+gar pRespondsToS(carSouthLeft, greenSouthLeft);
+gar pRespondsToS(carSouthRight, greenSouthRight);
+gar pRespondsToS(carEastStraight, greenEastStraight);
+gar pRespondsToS(carEastLeft, greenEastLeft);
+gar pRespondsToS(carEastRight, greenEastRight);
+gar pRespondsToS(carWestStraight, greenWestStraight);
+gar pRespondsToS(carWestLeft, greenWestLeft);
+gar pRespondsToS(carWestRight, greenWestRight);
+
+
+//pedestrians monitors
+monitor boolean pedestrianEastWaiting {
+	!pedestrianEastWaiting;
+	G next(pedestrianEastWaiting) = ((pedestrianEastFromNorthToSouthPressed | pedestrianEastFromSouthToNorthPressed | pedestrianEastWaiting) & !greenEastPedestrian);
+}
+
+monitor boolean pedestrianWestWaiting {
+	!pedestrianWestWaiting;
+	G next(pedestrianWestWaiting) = ((pedestrianWestFromNorthToSouthPressed | pedestrianWestFromSouthToNorthPressed | pedestrianWestWaiting) & !greenWestPedestrian);
+}
+
+monitor boolean pedestrianNorthWaiting {
+	!pedestrianNorthWaiting;
+	G next(pedestrianNorthWaiting) = ((pedestrianNorthFromEastToWestPressed | pedestrianNorthFromWestToEastPressed | pedestrianNorthWaiting) & !greenNorthPedestrian);
+}
+
+monitor boolean pedestrianSouthWaiting {
+	!pedestrianSouthWaiting;
+	G next(pedestrianSouthWaiting) = ((pedestrianSouthFromEastToWestPressed | pedestrianSouthFromWestToEastPressed | pedestrianSouthWaiting) & !greenSouthPedestrian);
+}
+
+//predicates
+
+predicate mutualExclusion(boolean greenA, boolean greenB): !(greenA & greenB);
+
+predicate doubleMutualExclusion(boolean greenSource, boolean greenA, boolean greenB):
+	mutualExclusion(greenSource, greenA) & 
+	mutualExclusion(greenSource, greenB);
+
+predicate tripleMutualExclusion(boolean greenSource, boolean greenA, boolean greenB, boolean greenC):
+	mutualExclusion(greenSource, greenA) & 
+	mutualExclusion(greenSource, greenB) & 
+	mutualExclusion(greenSource, greenC);
+
+predicate multiMutualExclusion(boolean greenSource, boolean greenA, boolean greenB, boolean greenC, boolean greenD, boolean greenE):
+	mutualExclusion(greenSource, greenA) &
+	mutualExclusion(greenSource, greenB) &
+	mutualExclusion(greenSource, greenC) &
+	mutualExclusion(greenSource, greenD) &
+	mutualExclusion(greenSource, greenE);
+		
+//////////////////////////////////////// safety guarantees for avoiding collisions ///////////////////////////////////////////////////
+
+// cars Vs. cars - left and straight
+gar G multiMutualExclusion(greenNorthStraight, greenEastStraight, greenEastLeft, greenWestStraight, greenWestLeft, greenSouthLeft);
+gar G multiMutualExclusion(greenNorthLeft, greenEastStraight, greenEastLeft, greenWestStraight, greenWestLeft, greenSouthStraight);
+gar G multiMutualExclusion(greenEastStraight, greenSouthStraight, greenSouthLeft, greenWestLeft, greenNorthStraight, greenNorthLeft);
+gar G multiMutualExclusion(greenEastLeft, greenSouthStraight, greenSouthLeft, greenWestStraight, greenNorthStraight, greenNorthLeft);
+gar G multiMutualExclusion(greenWestStraight, greenSouthStraight, greenSouthLeft, greenEastLeft, greenNorthStraight, greenNorthLeft);
+gar G multiMutualExclusion(greenWestLeft, greenSouthLeft, greenSouthStraight, greenEastStraight, greenNorthStraight, greenNorthLeft);
+gar G multiMutualExclusion(greenSouthStraight, greenWestStraight, greenWestLeft, greenEastLeft, greenEastStraight, greenNorthLeft);
+gar G multiMutualExclusion(greenSouthLeft, greenWestStraight, greenWestLeft, greenEastLeft, greenEastStraight, greenNorthStraight);
+
+// cars Vs. pedestrians
+gar G tripleMutualExclusion(greenNorthPedestrian, greenNorthStraight, greenNorthLeft, greenNorthRight);
+gar G tripleMutualExclusion(greenNorthPedestrian, greenEastRight, greenSouthStraight, greenWestLeft);
+
+gar G tripleMutualExclusion(greenSouthPedestrian, greenSouthStraight, greenSouthLeft, greenSouthRight);
+gar G tripleMutualExclusion(greenSouthPedestrian, greenEastLeft, greenNorthStraight, greenWestRight);
+
+gar G tripleMutualExclusion(greenWestPedestrian, greenWestStraight, greenWestLeft, greenWestRight);
+gar G tripleMutualExclusion(greenWestPedestrian, greenEastStraight, greenNorthRight, greenSouthLeft);
+
+gar G tripleMutualExclusion(greenEastPedestrian, greenEastStraight, greenEastLeft, greenEastRight);
+gar G tripleMutualExclusion(greenEastPedestrian, greenWestStraight, greenNorthLeft, greenSouthRight);
+
+
+// eventually pedestrian crossing
+gar GF !pedestrianNorthWaiting;
+gar GF !pedestrianSouthWaiting;
+gar GF !pedestrianWestWaiting;
+gar GF !pedestrianEastWaiting;

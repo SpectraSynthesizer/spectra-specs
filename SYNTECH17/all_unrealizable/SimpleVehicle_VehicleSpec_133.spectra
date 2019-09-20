@@ -1,0 +1,158 @@
+import "../patterns/DwyerPatterns.spectra"
+module VehicleSpec      
+
+env Int(0..5) frontSense;
+env Int(0..5) backSense;
+env Int(0..5) sideSense;
+env Status status; 
+
+sys MotorCmd driveMotor;
+sys SenseMotorCmd senseMotor; 
+sys AngleCmd steeringMotor; 
+sys Int(1..5) velocity;
+sys Mode mode;
+
+
+type SenseMotorCmd = {SIDE, BACK};
+type MotorCmd = {FWD, STOP, BWD};
+type Mode = {SEARCHING, SCANNING, PARKING, PARKED};
+type Status = {PARALLEL, NONE};
+type AngleCmd = {STRAIGHT, HARD_LEFT, LIGHT_LEFT, LIGHT_RIGHT, HARD_RIGHT};
+
+
+define
+  stopping := driveMotor = STOP ;
+  forwarding := driveMotor = FWD; 
+  reversing := driveMotor = BWD ;
+  left := steeringMotor = LIGHT_LEFT | steeringMotor = HARD_LEFT;
+  right := steeringMotor = LIGHT_RIGHT | steeringMotor = HARD_RIGHT;
+  light_left_fwd := steeringMotor = LIGHT_LEFT & driveMotor = FWD;
+  light_left_bwd := steeringMotor = LIGHT_LEFT & driveMotor = BWD;
+  hard_left_fwd := steeringMotor = HARD_LEFT & driveMotor = FWD;
+  hard_left_bwd := steeringMotor = HARD_LEFT & driveMotor = BWD;
+  light_right_fwd := steeringMotor = LIGHT_RIGHT & driveMotor = FWD;
+  light_right_bwd := steeringMotor = LIGHT_RIGHT & driveMotor = BWD;
+  hard_right_fwd := steeringMotor = HARD_RIGHT & driveMotor = FWD;
+  hard_right_bwd := steeringMotor = HARD_RIGHT & driveMotor = BWD;
+  getCloser := (PREV(sideSense = 5) & (sideSense = 4 | sideSense = 5)) | (PREV(sideSense = 4) & (sideSense = 3 | sideSense = 4)) | (PREV(sideSense = 3) & (sideSense = 2 | sideSense = 3)) | (PREV(sideSense = 2) & (sideSense = 1 | sideSense = 2)) | (PREV(sideSense = 1) & (sideSense = 0 | sideSense = 1));
+  sideways := light_left_fwd | light_left_bwd | hard_left_fwd | hard_left_bwd | light_right_fwd | light_right_bwd | hard_right_fwd | hard_right_bwd;
+  fwd_turning := (steeringMotor = HARD_LEFT | steeringMotor = HARD_RIGHT | steeringMotor = LIGHT_LEFT | steeringMotor = LIGHT_RIGHT) & forwarding;
+  bwd_turning := (steeringMotor = HARD_LEFT | steeringMotor = HARD_RIGHT | steeringMotor = LIGHT_LEFT | steeringMotor = LIGHT_RIGHT) & reversing;
+
+  //gar 
+//G mode = SEARCHING &  PREV(senseMotor = SIDE) & sideSense > 2 & status = NONE & frontSense > 2-> next(mode) = SCANNING & senseMotor = SIDE;  
+//
+//gar
+//G mode = SCANNING & sideSense <= 2 -> next(mode) = SEARCHING;
+  
+guarantee initial:
+mode = SEARCHING & senseMotor = SIDE & steeringMotor = STRAIGHT;
+
+//when scanning or searching set the sensor to update the side sense reading
+gar
+G (mode = SEARCHING | mode = SCANNING) -> (senseMotor = SIDE); 
+
+//While scanning if the sideSense reading is clear enough keep scanning and keep heading straight and forward
+gar
+G (mode = SCANNING & sideSense > 2) -> (next(mode) = SCANNING & steeringMotor = STRAIGHT & driveMotor = FWD);
+
+//While scanning if the sideSense gets too blocked and we haven't found a parking spot 
+//(i.e. status remains NONE) we swap to searching mode
+gar
+G (mode = SCANNING & sideSense <= 2 & status = NONE) -> (next(mode) = SEARCHING);
+
+//While searching, if there is no opening on the side we keep searching for an opening
+gar
+G (mode = SEARCHING & sideSense <= 2) -> (next(mode) = SEARCHING);
+
+//start scanning if the front sensor is sufficiently clear
+gar startScanning:
+G ((mode = SEARCHING) & frontSense > 2 & sideSense > 2 & status = NONE) -> (next(mode) = SCANNING); 
+
+//Once the status changes to PARALLEL and we were scanning, we switch to parking mode to begin parking
+gar foundPlace:
+G  (status = PARALLEL & mode = SCANNING) -> (next(mode) = PARKING);
+
+//If we are trying to park and we got ourselves sufficiently close to the wall we can swith to PARKED mode
+gar pGear:
+G (mode = PARKING & sideSense <= 1 & steeringMotor = STRAIGHT & driveMotor = STOP) -> (next(mode) = PARKED);
+
+//Always find a parking spot and park in it
+gar alwaysParkTheCar:
+GF mode = PARKED;
+
+//If our current mode is PARKING then our next mode can only be PARKING which means we are still
+//trying to park or PARKED which means we finished parking
+gar
+G (mode = PARKING) -> (next(mode) = PARKING | next(mode) = PARKED);
+
+//Orr's guarantees
+gar 
+G (driveMotor = BWD & left ) -> (next(driveMotor) = BWD | next(sideSense) = sideSense - 1);
+
+gar 
+G (driveMotor = FWD & right) -> (next(driveMotor) = FWD | next(sideSense) = sideSense + 1);
+
+//Make sure we don't crash while moving forward 
+guarantee dontCrashFront:
+G (frontSense <= 2 & (mode = SCANNING | mode = SEARCHING)) -> (next(mode) = SEARCHING & steeringMotor = HARD_LEFT);
+
+//Make sure we don't crash while moving backward
+guarantee dontCrashBack:  
+G (driveMotor = BWD) -> (backSense > 0 & PREV(senseMotor = BACK));
+
+//While moving backward always do so in a slow and controlled manner
+guarantee speedWhileInReverse:
+G reversing -> PREV(senseMotor = BACK) &  velocity = 1;
+
+//Change the speed of the car according to its distance from an obstacle
+guarantee speedWhileClear:
+  G (frontSense = 5 & mode = SEARCHING) -> velocity = 5;
+guarantee speedWhileVeryFar:
+  G (frontSense = 4 & mode = SEARCHING) -> velocity = 4;
+guarantee speedWhileFar:
+  G (frontSense = 3 & mode = SEARCHING) -> velocity = 3;
+guarantee speedWhileMedium:
+  G (frontSense = 2 & mode = SEARCHING) -> velocity = 2;
+guarantee slowSpeed:
+  G (frontSense = 1  | mode = PARKING | mode = SCANNING) -> velocity = 1;
+
+
+  
+//Assume that by moving forwards with or without turning will increase the back sensor's distance from a blocking obstacle
+//assumption 
+//  pRespondsToS(forwarding, backSense > 0);
+
+//Assume that by moving backwards with or without turning will increase the front sensor's distance from a blocking obstacle
+//assumption
+//  pRespondsToS((hard_left_fwd), frontSense > 0);
+
+//asm
+//pRespondsToS(PREV(mode = SCANNING) & mode = PARKING & driveMotor = BWD, sideSense <= 1); 
+
+//Standing still doesn't change a thing 
+asm 
+G (driveMotor = STOP & (frontSense != 0 | backSense !=0)) -> (sideSense = next(sideSense) & backSense = next(backSense) & frontSense = next(frontSense));
+
+//Driving backwards and turning left will make our sideSense change (downwards) or remain the same
+asm
+G (driveMotor = BWD & left) -> getCloser;
+
+//Assume that there exists some degree of movement in the environment
+assumption notInACage:
+GF frontSense != 0 | backSense !=0;
+
+//The car is not initially parked
+assumption notParkedInitially:
+status = NONE  & frontSense > 2;
+
+//Once a parking spot has been found it wont move. Hopefully.
+asm parkingSpotsDontDisappear:
+G (status = PARALLEL) -> (next(status) = PARALLEL);
+
+
+//assumption needToScanToFindAParkingSpot:
+
+//Assume that a parking a large enough parking spot to contain the car exists
+assumption aParkingSpotExists:
+  GF  (mode = SCANNING) -> (status = PARALLEL);

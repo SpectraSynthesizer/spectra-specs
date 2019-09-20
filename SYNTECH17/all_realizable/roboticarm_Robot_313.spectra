@@ -1,0 +1,601 @@
+module zz
+
+/*
+ * 
+ * 
+ * ----------------- preliminaries -----------------
+ * 
+ * Here we have the basic declarations, definitions, assumptions, and guarantees that all tasks (but Hanoi task) rely on
+ * 
+ * 
+ * 
+ */
+
+
+//The stations
+//Their colors indicate the colors of the balls they contain
+//We didn't define it as an array ('env Color[4] s'), as it is not supported in the Java (Or told us to do it) 
+env Color s0;
+env Color s1;
+env Color s2;
+env Color s3;
+
+//Tasks that the user chooses
+env Task task;
+
+
+//Boolean variable that indicates whether or not the robotic arm is moving the ball in station 'from' to the (presumably empty) station 'to'
+sys boolean isMoving;
+//Integers that indicate the "index" of the station from/to which the ball is moved 
+sys Int(0..3) from;
+sys Int(0..3) to;
+
+
+
+/*
+ * EMPTY denotes an empty station (that does not contain a ball)
+ * 
+ * NOT denotes a not exists station. For example, if there're only 3 stations, then the s3 = NOT.
+ * For the sake of simplicity, there're assumptions in the code that the color NOT is never used.
+ * So in order to use it, one needs to delete these assumptions first
+ *
+ *  
+ */
+type Color = {RED, GREEN, BLUE, EMPTY, NOT};
+ 
+
+//all tasks
+type Task = {
+  SCAN, //atomic action, isn't defined by Spectra, but can be used to reassess colors in all stations
+  SORT, //the robotic arm sorts the stations, and then stops moving 
+  EXCHANGE, //the robotic arm unsorts the stations
+  SWAP_RED_AND_BLUE, //the robotic arm swaps red and blue balls' locations (=stations)
+  MOVE_RED_LEFT, //the robotic arm moves some red ball to some empty station to its left, if one exists
+  GATHER_REDS,//the robotic arm gathers all red ball in adjacent stations   
+  HANOI //the robotic arm solves the famous "Hanoi Tower" riddle for 3 disks, encoded by the balls and stations (see the figure attached in the PowerPoint presentation for detailed explanation)
+};
+
+
+//These variables store the colors of the stations that 'from' and 'to' point to
+aux Color fromColor;
+aux Color toColor;
+
+
+//assigns color = s[index];
+predicate assign(Int(0..3) index, Color color):
+  ((index = 0) -> color = s0) &
+  ((index = 1) -> color = s1) &
+  ((index = 2) -> color = s2) &
+  ((index = 3) -> color = s3) ;
+
+//assign initially
+gar assign(from, fromColor);
+gar assign(to, toColor);
+
+//assign in all time-stamps but the first (that has been already assigned above)
+//we needed to write TWO gars for each assignment (rather than just 'gar G assign(from, fromColor)'), to get well-separated code (Jan told us to do it) 
+gar G next(assign(from, fromColor));
+gar G next(assign(to, toColor));
+
+
+//'from' never equals 'to'
+gar
+  from != to;
+gar
+  G next(from) != next(to);
+
+
+//move requires 'from' to exist, and 'to' to be empty
+gar moveRequirements:
+  G (isMoving) -> (fromColor != NOT & toColor = EMPTY);
+
+
+//set next(s[index]) = color
+predicate setColor(Int(0..3) index, Color color):
+  ((index = 0) -> next(s0)=color) &
+  ((index = 1) -> next(s1)=color) &
+  ((index = 2) -> next(s2)=color) &
+  ((index = 3) -> next(s3)=color) ;
+  
+
+//if !isMoving then all stations store the same balls  
+asm saveOnStaying:
+  G task != SCAN & task != HANOI & !isMoving -> saveAll;
+
+//if isMoving, then all stations but 'from' and 'to' store the same balls,
+//and 'from' and 'to' swaps their balls (the empty ball and the non-empty ball exchange their locations)
+asm saveOnMoving:
+  G (isMoving & task != SCAN & task != HANOI) -> (onExchangeSave & swap);
+  
+
+define
+  //all of the colors stay in their positions
+  saveAll :=
+    (next(s0) = s0) &
+    (next(s1) = s1) &
+    (next(s2) = s2) &
+    (next(s3) = s3) ;
+    
+  //when we swap between 'from' and 'to' we need to save the values of all the places except 'from' and 'to' 
+  onExchangeSave :=
+   
+    (((from != 0) & (to!=0)) -> ((next(s0) = s0))) &
+    (((from != 1) & (to!=1)) -> ((next(s1) = s1))) &
+    (((from != 2) & (to!=2)) -> ((next(s2) = s2))) &
+    (((from != 3) & (to!=3)) -> ((next(s3) = s3))) ;
+
+  //swap assigns next(fromColor)=toColor & next(toColor)=fromColor
+  //(we expressed this in the code in a close but different way as the above is an asm about aux variables) 
+  swap :=
+    setColor(from, toColor) & setColor(to, fromColor);
+    
+   
+//asserts that s contains some ball with this color
+predicate colorExists(Color color):
+  s0 = color |
+  s1 = color |
+  s2 = color |
+  s3 = color ;
+
+//without EMPTY we can't move anything, so we need this assumption
+//we decided for the sake of simplicity to assume that no NOT color exists
+define  
+  movingAsms :=
+    colorExists(EMPTY) & 
+    !colorExists(NOT);
+   
+    
+asm movingAsms;
+asm G next(movingAsms);
+
+/*
+ * 
+ * 
+ * ------------------ SCAN TASK ---------------
+ * 
+ * Atomic action that is not defined in the Spectra, but in the Java, and can be used to
+ * reassess colors in all stations 
+ * 
+ * 
+ */
+
+//we start with scan
+asm startWithScan:
+  task = SCAN;
+
+/*
+ * 
+ * 
+ * ----------- SORT TASK ------------
+ * 
+ * Sorts all balls in all stations w.r.t the total ordering: RED < GREEN < BLUE < EMPTY < NOT
+ * 
+ * 
+ */
+
+//the task stays SORT as long as we are not done
+asm continueSortUntilDone:
+  G (task = SORT & !sortDone) -> next(task) = SORT; 
+  
+//the robotic arm eventually succeeds to sort the balls  
+gar eventuallySortDone:
+  GF task = SORT -> sortDone;
+
+//once the robotic arm finishes sorting the balls, it stops moving
+gar stopMovingOnceSortDone:
+  G task = SORT & sortDone -> !isMoving;
+
+  
+
+
+define 
+     
+   //the colors are enums, and the Spectra defines a total order among them using their
+   //index in the enum. Thus, in our case, RED < GREEN < BLUE < EMPTY < NOT
+   sortDone :=
+      (s0 <= s1) &
+      (s1 <= s2) &
+      (s2 <= s3) ;
+
+
+/*
+ * 
+ * 
+ * ----------- EXCHANGE TASK ---------------
+ * 
+ * Unsorts the balls (in a clever way that avoids just moving one ball back and forth)
+ *  
+ * 
+ * 
+ */
+ 
+ 
+//to unsort we must always move
+//to avoid just moving one ball back and forth, we have the incrementFrom 
+gar
+  G task = EXCHANGE -> (isMoving & incrementFrom);
+
+
+
+//asserts that s[index] != NOT
+predicate existsPred(Int(0..3) index):
+  
+  ((index = 0) -> (s0 != NOT)) &
+  ((index = 1) -> (s1 != NOT)) &
+  ((index = 2) -> (s2 != NOT)) &
+  ((index = 3) -> (s3 != NOT)) ;
+ 
+ define 
+ 
+ /*
+   * We iterate over all existing values of 'from' in a cyclic manner
+   * 
+   * Notice that when !existsPred(from+1), then also !existsPred(from+2), etc.,
+   * so we we're in the last existing value
+   * 
+   * Notice also that we also may pass through from=EMPTY
+   * 
+   */
+   
+  incrementFrom :=
+    (( ((from != 3) & existsPred(from+1)) -> next(from) = from+1) &
+    (!((from != 3) & existsPred(from+1)) -> next(from) = 0)) ;
+
+
+
+/*
+ * 
+ * 
+ * ------------------- GATHER_REDS TASK ------------------
+ * 
+ * Gathers all red balls in adjacent stations.
+ * 
+ * 
+ */
+
+//the task stays GATHER_REDS as long as we are not done
+asm continueGatherRedsUntilDone:
+  G (task = GATHER_REDS & !gatherRedsDone) -> next(task) = GATHER_REDS;
+
+//the robotic arm eventually succeeds to gather the red balls
+gar eventuallyGatherRedsDone:
+  GF (task = GATHER_REDS) -> gatherRedsDone;
+
+//once the robotic arm finishes gathering the red balls, it stops moving
+gar stopMovingOnceGatherRedsDone:
+  G (task = GATHER_REDS & gatherRedsDone) -> !isMoving;
+  
+
+//gathering the red balls to the start (if some ball is red, then so is its predecessor, and so on)
+define
+  gatherRedsDone :=
+    ((s3 = RED) -> (s2 = RED)) &
+    ((s2 = RED) -> (s1 = RED)) &
+    ((s1 = RED) -> (s0 = RED)) ;
+
+    
+/*
+ * 
+ *  
+ * ----------------------- MOVE_RED_LEFT TASK ----------------------
+ * 
+ * Moves as many red balls to their left as possible.
+ * This task is done once every red ball has no empty place to its left.
+ * Of course, if no red ball exists, the task considered (vacantly) completed, and the robot does not move 
+ * 
+ */
+ 
+//the task stays MOVE_RED_LEFT as long as we are not done
+asm continueMoveRedLeftUntilDone:
+  G (task = MOVE_RED_LEFT & !moveRedLeftDone) -> next(task) = MOVE_RED_LEFT;
+
+//the robotic arm eventually succeeds to move as many red balls left as possible
+gar eventuallyMoveRedLeftDone:
+  GF (task = MOVE_RED_LEFT) -> moveRedLeftDone;
+
+//once the robotic arm finishes moving as many red balls left as possible, it stops moving
+gar stopMovingOnceMoveRedLeftDone:
+  G (task = MOVE_RED_LEFT & moveRedLeftDone) -> !isMoving;
+     
+//ensuring move legality
+gar moveLegality:
+  G task = MOVE_RED_LEFT & isMoving -> fromColor = RED;
+
+
+//asserts that s[i]!=EMPTY forall i<=index
+predicate prevBallsNotEmpty(Int(0..5) index):
+  ((index >= 1) -> (s0 != EMPTY)) &
+  ((index >= 2) -> (s1 != EMPTY)) &
+  ((index >= 3) -> (s2 != EMPTY)) &
+  ((index >= 4) -> (s3 != EMPTY)) ;
+  
+
+//we're done when there's no red ball with empty place to its left  
+define
+    moveRedLeftDone :=
+      ((s0 = RED) -> prevBallsNotEmpty(0)) &
+      ((s1 = RED) -> prevBallsNotEmpty(1)) &
+      ((s2 = RED) -> prevBallsNotEmpty(2)) &
+      ((s3 = RED) -> prevBallsNotEmpty(3)) ;
+    
+    
+      
+      
+
+      
+/*
+ * 
+ * 
+ * ------------------- SWAP_RED_AND_BLUE TASK ----------------
+ * 
+ * Swapping 'fromColor' from red to blue and vice versa,
+ * and thereby, swapping the red and the blue again and again.
+ * 
+ * 
+ */
+ 
+// swapping 'fromColor' from red to blue and vice versa yields swapping the red and the blue again and again  
+gar
+  G (swapRedAndBlueAsms & task = SWAP_RED_AND_BLUE) ->
+      isMoving &
+      ((fromColor = RED -> next(fromColor) = BLUE) &
+      (fromColor = BLUE -> next(fromColor) = RED));
+
+  
+  
+define
+  swapRedAndBlueAsms :=
+    colorExists(BLUE) &
+    colorExists(RED); 
+  
+
+
+/*
+ * 
+ * 
+ * ------------------- HANOI TASK ----------------
+ * 
+ * Solving the n=3 case (3 disks) of the famous Hanoi Tower riddle.
+ * 
+ * Looking at the figures in our PowerPoint representation is highly recommended to better
+ * understand how do these towers look like in the reality. 
+ * 
+ * Notice that many variables, defines, asms, gars, etc. already appeared above
+ * with minor differences: isMoving -> hanoiIsMoving, s -> t, from -> hanoiFrom, to -> hanoiTo, etc.
+ * To emphasize it, we have the prefix 'hanoi' in their names (like 'hanoiFrom')
+ * Shahar & Or told us to have these variables, defines, etc. duplicated rather than giving them different interpretation in Hanoi task  
+ *    
+ * 
+ */
+
+
+
+//3 Hanoi towers
+//(essentially, tower is 3 stations. see the PowerPoint presentation for detailed explanation)
+env Color t0;
+env Color t1;
+env Color t2;
+
+
+//defined similarly to isMoving, from, to that defined above.
+//However, this time we move from tower to tower (rather than from station to station), and thus we have different gars and asms   
+sys boolean hanoiIsMoving;
+sys Int(0..2) hanoiFrom;
+sys Int(0..2) hanoiTo;
+
+//also similar to fromColor, toColor
+aux Color hanoiFromColor;
+aux Color hanoiToColor;
+
+
+//similar to assign
+predicate hanoiAssign(Int(0..2) index, Color colorIndex):
+  ((index = 0) -> colorIndex = t0) &
+  ((index = 1) -> colorIndex = t1) &
+  ((index = 2) -> colorIndex = t2) ;
+
+//also similar to above: these gars ensure that hanoiFromColor, hanoiToColor store the colors that hanoiFrom, hanoiTo point to
+gar hanoiAssign(hanoiFrom, hanoiFromColor);
+gar hanoiAssign(hanoiTo, hanoiToColor);
+
+gar G next(hanoiAssign(hanoiFrom, hanoiFromColor));
+gar G next(hanoiAssign(hanoiTo, hanoiToColor));
+
+
+gar G next(hanoiFrom) != next(hanoiTo);
+
+
+
+
+
+
+//the task stays HANOI as long as we are not done
+asm continueHanoiUntilDone:
+  G (task = HANOI & !hanoiDone) -> next(task) = HANOI;
+    
+//the robotic arm eventually succeeds to solve the Hanoi Tower riddle
+gar eventuallyHanoiDone:
+  GF (task = HANOI & hanoiAsms) -> hanoiDone;
+
+//once the robotic arm finishes solving the Hanoi Tower riddle, it stops moving
+gar stopMovingOnceHanoiDone:
+  G task = HANOI & hanoiDone -> !hanoiIsMoving;     
+
+
+//ensuring move legality 
+gar hanoiMoveLegality:
+  G task = HANOI & hanoiIsMoving -> hanoiLegalMove;
+  
+
+//hanoiIsMoving should is not allowed in other tasks
+gar hanoiIsMovingImpliesHanoi:
+  G hanoiIsMoving -> task = HANOI;
+  
+  
+define
+  //no tower can be NOT
+  hanoiAsms :=
+    t0 != NOT &
+    t1 != NOT &
+    t2 != NOT ;
+    
+  //at the end, only the third tower is occupied
+  hanoiDone := 
+    (t0 = EMPTY) &
+    (t1 = EMPTY);
+  
+  //legal move is a move that moves (or, puts) non empty disk to (or, on) bigger disk (maybe the latter is empty)
+  hanoiLegalMove :=
+    hanoiFromColor != EMPTY &
+    hanoiToColor >= hanoiFromColor;
+    
+  //the tower that is not involved in the move stays unchanged
+  hanoiOnExchangeSave :=
+    (hanoiFrom != 0 & hanoiTo!=0 -> next(t0) = t0) &
+    (hanoiFrom != 1 & hanoiTo!=1 -> next(t1) = t1) &
+    (hanoiFrom != 2 & hanoiTo!=2 -> next(t2) = t2) ;
+  
+  //all the towers stay the same
+  hanoiSaveAll :=
+    (next(t0) = t0) &
+    (next(t1) = t1) &
+    (next(t2) = t2) ;
+
+//when !hanoiIsMoving, everything's stays the same
+asm
+  G task = HANOI & !hanoiIsMoving -> hanoiSaveAll;
+    
+asm
+  G hanoiIsMoving & task = HANOI -> hanoiOnExchangeSave;
+    
+asm
+  G (task = HANOI & hanoiIsMoving & hanoiAsms & hanoiLegalMove) ->
+      hanoiSetColor(hanoiTo, hanoiFromColor) ;
+asm
+  G (task = HANOI & hanoiIsMoving & hanoiAsms & hanoiLegalMove) -> 
+      hanoiNextFrom;
+
+//set next(t[index]) = color
+predicate hanoiSetColor(Int(0..2) index, Color color):
+  ((index = 0) -> next(t0)=color) &
+  ((index = 1) -> next(t1)=color) &
+  ((index = 2) -> next(t2)=color) ;
+
+
+define
+  hanoiNextFrom :=
+    (hanoiFrom = 0 -> nextColor(t0, r0)) &
+    (hanoiFrom = 1 -> nextColor(t1, r1)) &
+    (hanoiFrom = 2 -> nextColor(t2, r2)) ;
+  
+
+//counters that count how many disks each tower contain
+aux Int(0..3) r0;
+aux Int(0..3) r1;
+aux Int(0..3) r2;
+
+//initialize the counters such that all of the three balls are in the first tower
+define
+  initCounters:=
+    r0 = 3 &
+    r1 = 0 &
+    r2 = 0 ;
+
+//gar that strictly defines the expected behavior of the counters
+gar counterBehavior: 
+  G 
+    task = HANOI & hanoiIsMoving ->
+    (
+      //decrement the counter if it points to a tower from which a disk is being taken
+      (hanoiFrom = 0 -> next(r0) = r0 - 1) &
+      (hanoiFrom = 1 -> next(r1) = r1 - 1) &
+      (hanoiFrom = 2 -> next(r2) = r2 - 1)
+      &
+      //increment the counter if it points to a tower to which a disk is being given
+      (hanoiTo   = 0 -> next(r0) = r0 + 1) &
+      (hanoiTo   = 1 -> next(r1) = r1 + 1) &
+      (hanoiTo   = 2 -> next(r2) = r2 + 1)
+       
+      & 
+      //counter remains unchanged if it points to a tower that is not involved in the current move
+      (hanoiFrom != 0 & hanoiTo != 0 -> next(r0) = r0) &
+      (hanoiFrom != 1 & hanoiTo != 1 -> next(r1) = r1) &
+      (hanoiFrom != 2 & hanoiTo != 2 -> next(r2) = r2) 
+    );
+
+//preventing the counters from changing their values when we don't move the disks 
+gar saveCounters:
+  G
+  task = HANOI & !hanoiIsMoving ->
+    next(r0) = r0 &
+    next(r1) = r1 &
+    next(r2) = r2 ;
+
+
+//the following is equivalent to:
+//asm G next(counter) = 0 -> next(correspondingR) = EMPTY
+//but the above is not well-separated, so we chose this formulation
+asm zeroCounterImpliesEmpty: 
+G
+task = HANOI & hanoiIsMoving ->
+  (
+  (r0 = 1 & hanoiFrom = 0 -> next(t0) = EMPTY) &
+  (r1 = 1 & hanoiFrom = 1 -> next(t1) = EMPTY) &
+  (r2 = 1 & hanoiFrom = 2 -> next(t2) = EMPTY) 
+  );
+
+//this implies that in the first step of HANOI task, initCounters is done
+gar G task != HANOI -> next(initCounters);
+
+
+
+
+     
+  
+//similar to colorExists that was defined above  
+predicate hanoiExists(Color color):
+  t0 = color | 
+  t1 = color |
+  t2 = color;
+
+//defining next(fromColor)
+//which is equivalent to nextColor(fromColor, fromCount), where 'fromCount' is a synonym to the corresponding 'r'
+predicate nextColor(Color color, Int(0..3) count):
+
+  //if counter less than or equal to one, then after taking from it the current disk, it'll be 0 disks, and thus the color will be EMPTY
+  (count <= 1 -> next(color) = EMPTY) &
+  
+  //if counter is greater than one, then after taking from it, there will be >0 disks, and thus the color won't be EMPTY.
+  //thus, it must be some color that is not on top of the towers (as we assume that all the 3 colors: RED, GREEN, BLUE appear in the task)
+  (count > 1 ->
+    (
+      (!hanoiExists(RED)   & next(color) = RED  ) | //never happens, as legal move satisfies next(color) > color, but written here for "completeness"
+      (!hanoiExists(GREEN) & next(color) = GREEN) |
+      (!hanoiExists(BLUE)  & next(color) = BLUE ) 
+    )
+  );
+
+//equivalent to asm G hanoiAsms, and written this way for well-separation reasons, as explained above
+asm hanoiAsms;
+asm G next(hanoiAsms);
+
+define
+  //assumptions for the first step of Hanoi riddle task
+  //this is in contrast to hanoiAsms that are assumptions that we always assume (not only in the first step) 
+  hanoiStrongAsms :=
+    t0 = RED &
+    t1 = EMPTY &
+    t2 = EMPTY;
+
+//always the first time we have task = HANOI, hanoiStrongAsms is satisfied    
+asm hanoiStrongAsms;
+asm G task != HANOI & next(task) = HANOI -> next(hanoiStrongAsms);
+
+
+//optimization for compressing the symbolic automaton
+gar hanoiFirstOptimization:
+  G !hanoiIsMoving -> hanoiFrom = 0 & hanoiTo = 1;
+
+//optimization for compressing the symbolic automaton
+gar hanoiSecondOptimization:
+  G task = HANOI -> !isMoving;

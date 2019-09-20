@@ -1,0 +1,223 @@
+import "../patterns/DwyerPatterns.spectra"
+
+module Elevator
+
+type DoorsMotorCmd= {CLOSE, STOP,OPEN};
+type LiftMotorCmd= {UP, STOP,DOWN};
+type LampCmd= {ON, OFF};
+type FloorState={FLOOR0,FLOOR1,FLOOR2,FLOOR3,NONE};
+type DoorsState={Closed,Opened,FullyOpened};
+//type VelocityC= {ZERO, SLOW,FAST};
+
+
+
+//env variables that saying if there was a call from a floor.
+env boolean calls0_c;
+env boolean calls1_c;
+env boolean calls2_c;
+env boolean calls3_c;
+
+//Signals that tell the controller that 3,5 and 20 seconds have passed.
+env boolean seconds3;
+env boolean seconds5;
+env boolean seconds20;
+
+//The env "brings" to the controller the current floor the the door state.
+env FloorState floor_c;
+env DoorsState doors_c;
+
+//env boolean shabbatMode;
+
+
+//The system's motors commands, lamp and timer.
+sys LiftMotorCmd liftM_c;
+sys DoorsMotorCmd doorsM_c;
+sys LampCmd lamp_c;
+sys boolean countTime_c;
+
+//A var for memory - remember calls.
+aux boolean[4] memCalls;
+
+
+//we didn't put anymore comments on the spec, instead we gave names to every gar and asm in the spec.
+
+define 
+  goingUp := (liftM_c = UP);
+  goingDown := (liftM_c = DOWN);
+  moving := (goingUp | goingDown);
+  openningDoors := (doorsM_c = OPEN);
+  closingDoors := (doorsM_c = CLOSE);
+  keepDoorsState := (doorsM_c = STOP);
+  lightIsOn := (lamp_c = ON);
+  doorsAreClosed  :=  (doors_c=Closed);
+  doorsAreFullyOpened :=  (doors_c=FullyOpened);
+  
+  floor0  :=  (floor_c=FLOOR0);
+  floor1  :=  (floor_c=FLOOR1);
+  floor2  :=  (floor_c=FLOOR2);
+  floor3  :=  (floor_c=FLOOR3);
+
+  atDesignatedFloor := (floor0 & memCalls[0]) | (floor1 & memCalls[1]) | (floor2 & memCalls[2]) | (floor3 & memCalls[3]);
+  anyCalls := (memCalls[0] | memCalls[1] | memCalls[2] | memCalls[3]);
+  edged_floor := (floor0 | floor3);
+  
+
+  //handleFlor Defines:
+  justArrivedToDesignatedFloor   := (!handleFloor) & atDesignatedFloor;
+  justStoppedAtDesignatedFloor   := justArrivedToDesignatedFloor & (!moving)&!(returnTo0);
+  notFinishedWithDesignatedFloor := handleFloor&!doorsAreClosed;
+  
+
+monitor boolean returnTo0
+{  (!returnTo0) ;
+   G (!floor0 & ((!anyCalls&seconds20) | returnTo0))<->next (returnTo0) ; 
+}
+
+monitor boolean handleFloor
+{ (!handleFloor) ;
+  G justStoppedAtDesignatedFloor -> next (handleFloor) ;
+  G (notFinishedWithDesignatedFloor & next (doorsAreClosed) ) -> next (!handleFloor) ;
+  G (!(justStoppedAtDesignatedFloor)&!(notFinishedWithDesignatedFloor&next(doorsAreClosed))) -> (next (handleFloor) = handleFloor);
+}
+
+
+
+gar init_motors:
+(!moving) & (keepDoorsState) & (!lightIsOn) ;
+
+asm startFromFloor0:
+  floor0;
+  
+asm startFromClosedDoors:
+  doorsAreClosed;
+
+gar setZeroCalls:
+(!memCalls[0]) & (!memCalls[1]) & (!memCalls[2]) & (!memCalls[3]) ;
+  
+gar doorsAreClosedWhileMoving:
+G (!doorsAreClosed)->(!moving);
+
+
+gar ifFloor0DontGoDown:
+G floor0 -> ! (goingDown) ;
+
+gar ifFloor3DontGoUp:
+G floor3 -> ! (goingUp) ;
+
+gar ifDoorsAreClosedDontClose:
+G doorsAreClosed -> (!closingDoors) ;
+
+gar ifDoorsAreOpenedDontOpen:
+G doorsAreFullyOpened->(!openningDoors);
+
+gar lightBlinksWhileMoving:
+G moving -> (next (lightIsOn) != lightIsOn);
+
+gar lightIsOffWhileNotMoving:
+G (!moving) -> (next(!lightIsOn) );
+
+asm ifCallsFromFloor0GoTo0:
+pRespondsToS (memCalls[0], floor0) ;
+
+asm ifCallsFromFloor1GoTo1:
+pRespondsToS (memCalls[1], floor1) ;
+
+asm ifCallsFromFloor2GoTo2:
+pRespondsToS (memCalls[2], floor2) ;
+
+asm ifCallsFromFloor3GoTo3:
+pRespondsToS (memCalls[3], floor3) ;
+
+
+gar dontChangeDirectionWithoutStopping:
+G ((goingUp -> next (!goingDown) ) & (goingDown -> next (!goingUp) ));
+
+gar ifMovingDontStopTillDesignatedFloorOrEdgedFloor:
+G (moving&!returnTo0) -> next ((!moving)<->(atDesignatedFloor|edged_floor)) ;
+
+
+gar ifAtDesignatedFloorDontMove:
+  G (atDesignatedFloor&!returnTo0)->(!moving);
+
+
+gar rememberCalls:
+G (calls0_c & (!memCalls[0]) -> next (memCalls[0]) ) &
+  (calls1_c & (!memCalls[1]) -> next (memCalls[1]) ) &
+  (calls2_c & (!memCalls[2]) -> next (memCalls[2]) ) &
+  (calls3_c & (!memCalls[3]) -> next (memCalls[3]) );
+
+gar ifFinishedWithDesignatedFloorRemoveCall:
+G ((floor0 & handleFloor & next (!handleFloor)) -> next (!memCalls[0]) ) &
+  ((floor1 & handleFloor & next (!handleFloor)) -> next (!memCalls[1]) ) &
+  ((floor2 & handleFloor & next (!handleFloor)) -> next (!memCalls[2]) ) &
+  ((floor3 & handleFloor & next (!handleFloor)) -> next (!memCalls[3]) );
+
+gar keepRememberedCalls:
+G  ((!(calls0_c & !memCalls[0])) & !(floor0 & handleFloor & next (!handleFloor))) -> (next (memCalls[0]) = memCalls[0]) &
+   ((!(calls1_c & !memCalls[1])) & !(floor1 & handleFloor & next (!handleFloor))) -> (next (memCalls[1]) = memCalls[1]) &
+   ((!(calls2_c & !memCalls[2])) & !(floor2 & handleFloor & next (!handleFloor))) -> (next (memCalls[2]) = memCalls[2]) &
+   ((!(calls3_c & !memCalls[3])) & !(floor3 & handleFloor & next (!handleFloor))) -> (next (memCalls[3]) = memCalls[3]);
+
+
+gar dontMoveWithoutReason:
+  G ( ((!anyCalls) & (!returnTo0))  | handleFloor) -> !moving; // &(!shabbatMode))->!moving;
+
+gar dontOpenDoorsWithNoReason:
+  G (!handleFloor)->(!openningDoors);
+
+
+gar startCountingTime:
+G (!(moving|anyCalls |floor0|returnTo0) | (handleFloor & (doorsAreClosed | doorsAreFullyOpened)))<->countTime_c;
+
+/*
+asm returnTo0WhenRequired:
+  pBecomesTrue_betweenQandR (floor0&doorsAreClosed, returnTo0, goingUp|!moving|openningDoors|(keepDoorsState&!moving)) ;
+*/
+
+gar whenNeedToReturnTo0CloseDoors:
+  G (returnTo0&(!doorsAreClosed))->closingDoors;
+
+gar whenNeedToReturnTo0GoDown:
+  G (returnTo0&!floor0&doorsAreClosed)->goingDown;
+
+
+asm envDoesntCountTimeWhenNotRequired:
+G (!countTime_c) -> next (!seconds20&!seconds3&!seconds5) ;
+
+
+asm not20SecondsBefore3Seconds:
+  G (!seconds3) -> !(seconds20|seconds5) ;
+
+asm not20SecondsBefore5Seconds:
+  G (!seconds5)->(!seconds20);
+
+
+asm ifCount3SecAndStillCountThenNext3Sec:
+G (seconds3&countTime_c)->next(seconds3);  
+
+asm ifCount5SecAndStillCountThenNext5Sec:
+G (seconds5&countTime_c)->next(seconds5);  
+
+asm ifCount20SecAndStillCountThenNext20Sec:
+G (seconds20&countTime_c)->next(seconds20);  
+
+
+asm canCount3SecWhileHandleFloor:
+  pRespondsToS (countTime_c&handleFloor, seconds3) ;
+
+asm canCount5SecWhileDoorsAreOpened:
+  pRespondsToS (countTime_c&handleFloor&doorsAreFullyOpened, seconds5) ;
+
+asm canCount20SecWhileTheresNoCallOrThereWillBeCall:
+  pRespondsToS (countTime_c&!anyCalls, seconds20|anyCalls) ;
+
+
+asm ifArrivedDesignatedFloorThanDoorsWillBeFullyOpened:
+  pRespondsToS(justStoppedAtDesignatedFloor, doorsAreFullyOpened);
+  
+
+asm openDoorsAtFloorThatCalledIn3Seconds:
+  pBecomesTrue_betweenQandR (seconds3,justArrivedToDesignatedFloor&next(handleFloor)/*&!openningDoors*/,openningDoors);
+
+gar doorsStayOpenedInDesignatedFloorFor5Sec:
+  G (handleFloor&doorsAreFullyOpened&(!seconds5))->(!closingDoors);

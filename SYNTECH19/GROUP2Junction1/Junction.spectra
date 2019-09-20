@@ -1,0 +1,228 @@
+import "./patterns/DwyerPatterns.spectra"
+
+module Junction
+
+//Environment controlled input variables (sensors)
+
+// because of no support for arrays (with predicates) and loops we will use convention:
+// top = 0, right = 1, bottom = 2, left = 3, 4 = NONE
+
+define NONE := 4;
+
+		
+env Int(0..4)[4] vehicles; 
+// row i - pedestrian pressed to go on road direction i 
+env boolean[4] pedestrianReq;
+env boolean[4] roadBlocks;
+env boolean isNight;
+env boolean[4] ambulances;
+
+//System controlled output variables (lights)
+sys boolean[4] greenTraffic;
+sys boolean[4] greenPedestrians;
+
+/* ********************************
+// predicates
+* * ********************************/
+predicate mutualExclusion(boolean A, boolean B):
+	!(A & B);
+
+predicate mutualExclusionFourArgs(boolean A, boolean B, boolean C, boolean D):
+	mutualExclusion(A,B) & mutualExclusion(A,C) & 
+	mutualExclusion(A,D) & mutualExclusion(B,C) & 
+	mutualExclusion(B,D) & mutualExclusion(C,D);
+
+predicate NORThreeArgs(boolean A, boolean B, boolean C):
+	!(A | B | C);
+	
+predicate NORFourArgs(boolean A, boolean B, boolean C, boolean D):
+	!(A | B | C | D);
+
+predicate trafficAsm(Int(0..4) vehicle):
+	!(vehicle = 4); // vehicle's direction is not NONE
+
+predicate pedestrianStillWaiting(boolean waitedBefore, boolean waitingNow, boolean gotGreen):
+	(waitedBefore | waitingNow) & !gotGreen;
+
+predicate roadNotBlocked(Int(0..4) vehicle):
+	!(vehicle = 0 & roadBlocks[0]) & !(vehicle = 1 & roadBlocks[1]) & 
+	!(vehicle = 2 & roadBlocks[2]) & !(vehicle = 3 & roadBlocks[3]);
+
+
+//predicate can
+/* ********************************
+// Assumptions
+* ********************************/
+
+/* There is traffic for infinite number of times  - one assumption for all roads
+ * All cars have an intended direction (i.e continuing straight, left or right).
+   */
+asm GF trafficAsm(vehicles[0]) | trafficAsm(vehicles[1]) | trafficAsm(vehicles[2]) | trafficAsm(vehicles[3]);
+
+/* There will be pedestrians for infinite number of times - one assumption for all roads  */
+asm GF pedestrianReq[0] | pedestrianReq[1] | pedestrianReq[2] | pedestrianReq[3];
+
+// make sure vehicles don't try to return to the direction they came from
+asm alw (vehicles[0] != 0);
+asm alw (vehicles[1] != 1);
+asm alw (vehicles[2] != 2);
+asm alw (vehicles[3] != 3);
+
+// make sure vehicles & pedestrians don't "disappear"
+// in the case of vehicles: make sure they don't change their intended direction
+asm G vehicles[0] != NONE -> ( 
+							(next(vehicles[0]) = vehicles[0])
+							| greenTraffic[0] 
+							);
+asm  G vehicles[1] != NONE -> ( 
+							(next(vehicles[1]) = vehicles[1])
+							| greenTraffic[1] 
+							);
+asm G vehicles[2] != NONE -> ( 
+							(next(vehicles[2]) = vehicles[2]) 
+							| greenTraffic[2] 
+							);
+asm G vehicles[3] != NONE -> ( 
+							(next(vehicles[3]) = vehicles[3])
+							| greenTraffic[3] 
+							);
+
+asm G pedestrianReq[0] -> (next(pedestrianReq[0]) | greenPedestrians[0]);
+asm G pedestrianReq[1] -> (next(pedestrianReq[1]) | greenPedestrians[1]);
+asm G pedestrianReq[2] -> (next(pedestrianReq[2]) | greenPedestrians[2]);
+asm G pedestrianReq[3] -> (next(pedestrianReq[3]) | greenPedestrians[3]);
+
+// assume a road can't be blocked forever (eventually not blocked)
+asm GF !roadBlocks[0];
+asm GF !roadBlocks[1];
+asm GF !roadBlocks[2];
+asm GF !roadBlocks[3];
+
+// assumption -> there is ambulance only if there's a vehicle (because ambulance is a vehicle)
+
+asm alw (vehicles[0] = NONE) -> !ambulances[0];
+asm alw (vehicles[1] = NONE) -> !ambulances[1];
+asm alw (vehicles[2] = NONE) -> !ambulances[2];
+asm alw (vehicles[3] = NONE) -> !ambulances[3];
+
+// make sure "ambulanceness" stays between steps (car doesn't become an ambulance and ambulance doesn't become a car)
+asm G (vehicles[0] != NONE & !greenTraffic[0]) -> next(ambulances[0]) = ambulances[0];
+asm G (vehicles[1] != NONE & !greenTraffic[1]) -> next(ambulances[1]) = ambulances[1];
+asm G (vehicles[2] != NONE & !greenTraffic[2]) -> next(ambulances[2]) = ambulances[2];
+asm G (vehicles[3] != NONE & !greenTraffic[3]) -> next(ambulances[3]) = ambulances[3];
+
+
+// assume night/day is constant through program execution
+asm G isNight = next(isNight);
+
+/* ********************************
+// Guarantees
+* ********************************/
+
+/* ***********************************
+ * *** Roads - Vehicles guarantees ***
+ * **********************************/
+ 
+// Vehicles eventually get green lights guarantees ***
+gar pRespondsToS(!(vehicles[0] = NONE), greenTraffic[0]);
+gar pRespondsToS(!(vehicles[1] = NONE), greenTraffic[1]);
+gar pRespondsToS(!(vehicles[2] = NONE), greenTraffic[2]);
+gar pRespondsToS(!(vehicles[3] = NONE), greenTraffic[3]);
+
+// Vehicle crashes prevention
+// make sure that crashes can not happen (don't allow ONLY vehicles crashes scenarios)
+
+// prevent crashes for adjacent roads vehicles
+// given roads i,j: if j = (i + 1) mod 4, the car on road j can only turn to road i
+gar alw (greenTraffic[0] & greenTraffic[1]) -> (vehicles[1] = 0);
+gar alw (greenTraffic[1] & greenTraffic[2]) -> (vehicles[2] = 1);	
+gar alw (greenTraffic[2] & greenTraffic[3]) -> (vehicles[3] = 2);
+gar alw (greenTraffic[0] & greenTraffic[3]) -> (vehicles[0] = 3);
+
+// prevent crashes for opposite roads vehicles
+gar alw (greenTraffic[0] & greenTraffic[2])-> !(
+	 		(vehicles[0] = 1 & (vehicles[2] != NONE)) |  
+	 	 	((vehicles[0] = 2 | vehicles[0] = 3) & vehicles[2] = 3)
+	 	);
+gar alw (greenTraffic[1] & greenTraffic[3])-> !(
+	 		((vehicles[1] = 0 | vehicles[1] = 3) & vehicles[3] = 0) |  
+	 	 	(vehicles[1] = 2 & vehicles[3] != NONE)
+	 	);	 	
+
+// road blocks guarantees
+// make sure no one can turn to a road that is blocked
+gar alw !(roadBlocks[0] & greenTraffic[1] & vehicles[1] = 0);
+gar alw !(roadBlocks[0] & greenTraffic[2] & vehicles[2] = 0);
+gar alw !(roadBlocks[0] & greenTraffic[3] & vehicles[3] = 0);
+gar alw !(roadBlocks[1] & greenTraffic[0] & vehicles[0] = 1);
+gar alw !(roadBlocks[1] & greenTraffic[2] & vehicles[2] = 1);
+gar alw !(roadBlocks[1] & greenTraffic[3] & vehicles[3] = 1);
+gar alw !(roadBlocks[2] & greenTraffic[0] & vehicles[0] = 2);
+gar alw !(roadBlocks[2] & greenTraffic[1] & vehicles[1] = 2);
+gar alw !(roadBlocks[2] & greenTraffic[3] & vehicles[3] = 2);
+gar alw !(roadBlocks[3] & greenTraffic[0] & vehicles[0] = 3);
+gar alw !(roadBlocks[3] & greenTraffic[1] & vehicles[1] = 3);
+gar alw !(roadBlocks[3] & greenTraffic[2] & vehicles[2] = 3);
+
+// ambulances guarantees 
+gar G ( PREV(ambulances[0]) & PREV(!greenTraffic[0]) & 
+	PREV(roadNotBlocked(vehicles[0])) & roadNotBlocked(vehicles[0]) )
+	-> greenTraffic[0] | next(greenTraffic[0]);
+ 
+
+ 
+// night mode guarantees
+gar alw isNight -> mutualExclusionFourArgs(greenTraffic[0],greenTraffic[1],
+											greenTraffic[2],greenTraffic[3]);
+
+/* **************************************
+ * *** Roads - Pedestrians guarantees ***
+ * **************************************/
+ // make sure that a vehicle doesn't run over a pedestrian near it's src loc
+gar G mutualExclusion(greenTraffic[0], greenPedestrians[0]);
+gar G mutualExclusion(greenTraffic[1], greenPedestrians[1]);
+gar G mutualExclusion(greenTraffic[2], greenPedestrians[2]);
+gar G mutualExclusion(greenTraffic[3], greenPedestrians[3]);
+
+ // make sure that a vehicle doesn't run over a pedestrian near it's dst loc
+gar alw !(greenTraffic[0] & (vehicles[0] = 1) & greenPedestrians[1]);
+gar alw !(greenTraffic[0] & (vehicles[0] = 2) & greenPedestrians[2]);
+gar alw !(greenTraffic[0] & (vehicles[0] = 3) & greenPedestrians[3]);
+gar alw !(greenTraffic[1] & (vehicles[1] = 0) & greenPedestrians[0]);
+gar alw !(greenTraffic[1] & (vehicles[1] = 2) & greenPedestrians[2]);
+gar alw !(greenTraffic[1] & (vehicles[1] = 3) & greenPedestrians[3]);
+gar alw !(greenTraffic[2] & (vehicles[2] = 0) & greenPedestrians[0]);
+gar alw !(greenTraffic[2] & (vehicles[2] = 1) & greenPedestrians[1]);
+gar alw !(greenTraffic[2] & (vehicles[2] = 3) & greenPedestrians[3]);
+gar alw !(greenTraffic[3] & (vehicles[3] = 0) & greenPedestrians[0]);
+gar alw !(greenTraffic[3] & (vehicles[3] = 1) & greenPedestrians[1]);
+gar alw !(greenTraffic[3] & (vehicles[3] = 2) & greenPedestrians[2]);
+ 
+/* ****************************************************
+ * *** Pedestrians eventually get lights guarantees ***
+ * ***************************************************/
+gar pRespondsToS(pedestrianReq[0], greenPedestrians[0]);
+gar pRespondsToS(pedestrianReq[1], greenPedestrians[1]);
+gar pRespondsToS(pedestrianReq[2], greenPedestrians[2]);
+gar pRespondsToS(pedestrianReq[3], greenPedestrians[3]);
+
+
+ /*************************************************************************************************
+ * Appendix: comment out code for maybe later after spectra will fix bugs and support more stuff
+ * ******* */
+ /*
+  * 
+  predicate mutualExclusionFourArgs(boolean[4] args):
+	mutualExclusion(args[0],args[1]) & mutualExclusion(args[0],args[2]) & 
+	mutualExclusion(args[0],args[3]) & mutualExclusion(args[1],args[2]) & 
+	mutualExclusion(args[1],args[3]) & mutualExclusion(2,3);
+  
+// directions
+predicate atLeastOneDirection(boolean[4] direction):
+	(direction[0] | direction[1] | direction[2] | direction[3]);
+
+// cars
+predicate trafficAsm(direction vehicle):
+	// car[0],car[1],car[2],car[3]
+	atLeastOneDirection(car) & mutualExclusionFourArgs(car[0], car[1], car[2], car[3]);
+*/

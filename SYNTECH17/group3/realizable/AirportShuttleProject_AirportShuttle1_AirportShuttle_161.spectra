@@ -1,0 +1,257 @@
+import "../patterns/DwyerPatterns.spectra"
+
+module AirportShuttle
+
+env Int(0..4) station;
+env Button stopButton;
+env DoorStatus doorStatus;
+env boolean technicianAck;
+env Int(0..4) baseStation; // need only 0-3
+env Int(0..4) pressedStation;
+env boolean longTimeWithoutRequests;
+
+sys MotorCmd mLeft;
+sys MotorCmd mRight;
+sys DoorOp doorReq;
+sys boolean startTechnicalJob;
+sys boolean[4] shuttleTasksFwd;
+sys boolean[4] shuttleTasksBwd;
+sys Int(0..4) pickUpStation;
+
+type Button = {PRESSED, RELEASED};
+type MotorCmd = {FWD, STOP, BWD};
+type Direction = {GOING_FWD, GOING_BWD, GOING_NONE};
+type DoorOp = {OPEN, CLOSE, NIL};
+type DoorStatus = {OPENED, CLOSED, IN_PROCESS};
+
+define 
+  stopping := mLeft = STOP & mRight = STOP;
+  forwarding := mLeft = FWD & mRight = FWD;
+  backwarding := mLeft = BWD & mRight = BWD;
+  atStation := station != stationNone;
+  atBaseStation := station = baseStation;
+  enteringStation := (station != stationNone) & (PREV (station = stationNone));
+  openDoorReq := doorReq = OPEN;
+  closeDoorReq := doorReq = CLOSE;
+  doorCounterIncreased := (PREV (next(doorOperationsCounter) - doorOperationsCounter = 1) );
+  noRequestsFwd := (shuttleTasksFwd[0]=false & shuttleTasksFwd[1]=false & 
+                     shuttleTasksFwd[2]=false & shuttleTasksFwd[3]=false);
+  noRequestsBwd := (shuttleTasksBwd[0]=false & shuttleTasksBwd[1]=false & 
+                     shuttleTasksBwd[2]=false & shuttleTasksBwd[3]=false);
+  noRequests := noRequestsFwd & noRequestsBwd;
+  stationOne := 0;
+  stationTwo := 1;
+  stationThree := 2;
+  stationFour := 3;
+  stationNone := 4;
+  
+
+predicate isBaseStationFwd(Direction d, Int(0..4) stationLast):
+  isTaskDirectionFwdOrNoTask(d, stationLast, baseStation) | stationLast = 4;
+
+predicate isBaseStationBwd(Direction d, Int(0..4) stationLast):
+  isTaskDirectionBwdOrNoTask(d, stationLast, baseStation);
+
+///////////////////////////////////////
+// Environment Specification
+/////////////////////////////////////
+
+assumption initialStateEnv:
+  stopButton=RELEASED & doorStatus=CLOSED & !atStation & noRequests;
+ 
+// Leave station eventually
+assumption leaveStationEventually:
+  pRespondsToS (forwarding | backwarding, !atStation | stopping);
+
+// Going fw -> no fw tasks
+assumption
+  pRespondsToS(forwarding, noRequestsFwd);
+
+// Going bw -> no backward tasks
+assumption
+  pRespondsToS(backwarding, noRequestsBwd);
+
+// if base station is fw and going fw -> will arrive to base station (or bw or stopping)
+assumption
+  pRespondsToS(isBaseStationFwd(shuttleDirection, lastPassedStation) & forwarding, atBaseStation | backwarding | stopping);
+
+// if base station is bw and going bw -> will arrive to base station (or fw or stopping)
+assumption
+  pRespondsToS(isBaseStationBwd(shuttleDirection, lastPassedStation) & backwarding, atBaseStation | forwarding | stopping);
+
+// Station does not change when stopping
+assumption stationDoesNotChangeWhenStopping:
+  G (stopping -> station = next(station));
+
+// Done door process eventually
+assumption doneDoorProcessEventually:
+  GF doorStatus!=IN_PROCESS;
+    
+// No strange doorStatus 1
+assumption noStrangeDoorStatus1:
+  G (next(doorStatus=OPENED) -> (doorStatus=IN_PROCESS));
+  
+// No strange doorStatus 2
+assumption noStrangeDoorStatus2:
+  G (next(doorStatus=CLOSED) -> (doorStatus!=OPENED));
+
+// door in process only when asked to
+assumption
+  G (next(doorStatus = IN_PROCESS) -> (doorStatus = IN_PROCESS) | openDoorReq  | closeDoorReq);
+
+// No one press on stopButton while atStation
+assumption
+  G (atStation -> stopButton=RELEASED);
+
+// Initially no technician ack
+assumption initiallyNoTechnicianAck:
+  !technicianAck;
+  
+assumption doneTechnicianActionEventually:
+  pRespondsToS(techGuyInAction, technicianAck);
+ 
+// No strange technician acks
+assumption noStrangeTechnicianAcks:
+  G (next(technicianAck) -> (techGuyInAction & !technicianAck));
+
+///////////////////////////////////////
+// System Specification
+///////////////////////////////////////
+
+// Initial state 
+guarantee initialState:
+stopping & doorReq=NIL & noRequests & !startTechnicalJob;
+
+// Stop if at station and stopAtNearestStation is true 
+guarantee stopAtNearestStationWhenAsked:
+G (atStation & stopAtNearestStation -> stopping);
+
+/**
+ * monitor stopAtNearestStation becomes true when stopButton is pressed
+ * TBD: cancel monitor and use the regular mechanism
+ */
+monitor boolean stopAtNearestStation {
+  // Initially not stopAtNearestStation
+  !stopAtNearestStation;
+  // If stopButton is pressed - change stopAtNearestStation to true
+  G ( (stopButton = PRESSED & !doorCounterIncreased) -> next(stopAtNearestStation));
+  // If doorCounterIncreased - change stopAtNearestStation to false
+  G ( (doorCounterIncreased) -> next(!stopAtNearestStation));
+  // If
+  G ( ((stopButton = RELEASED) & !doorCounterIncreased) -> stopAtNearestStation = next(stopAtNearestStation));
+} 
+
+// Don't change door request when door is in process
+guarantee dontChangeDoorRequestWhenDoorIsInProcess:
+  G (doorStatus=IN_PROCESS -> doorReq=NIL);
+
+predicate taskAtCurrentStation(Int(0..4) index):
+((shuttleTasksFwd[0] | shuttleTasksBwd[0]) & index = 0) |
+((shuttleTasksFwd[1] | shuttleTasksBwd[1]) & index = 1) |
+((shuttleTasksFwd[2] | shuttleTasksBwd[2]) & index = 2) |
+((shuttleTasksFwd[3] | shuttleTasksBwd[3]) & index = 3);
+
+// Open door iff stopping because of stop request or task and door is closed
+// (stopAtNearestStation will be false after 1 cycle of open and close)
+guarantee
+G (atStation & (stopAtNearestStation| taskAtCurrentStation(station))) & (doorStatus = CLOSED) & (!doorCounterIncreased) <-> openDoorReq;
+
+// Close door after open
+guarantee closeDoorAfterOpen:
+G ( (doorStatus = OPENED) <-> closeDoorReq);
+
+// Update pickUpStation (for the application)
+guarantee
+G doorStatus = OPENED -> pickUpStation = station;
+
+guarantee
+G doorStatus != OPENED -> pickUpStation = stationNone;
+
+/**
+ * monitor doorOperationsCounter is counting open-close operations
+ * From 0 to 10
+ */ 
+monitor Int(0..10) doorOperationsCounter {
+  doorOperationsCounter = 0;
+  G (doorStatus != CLOSED) & (doorOperationsCounter != 10) -> (next(doorOperationsCounter) = doorOperationsCounter);
+  G ((doorStatus = CLOSED) & PREV(doorStatus = CLOSED) & (doorOperationsCounter != 10)) -> (next(doorOperationsCounter) = doorOperationsCounter);
+  G ((doorStatus = CLOSED) & PREV(doorStatus != CLOSED) & (doorOperationsCounter != 10)) -> (next(doorOperationsCounter) = (doorOperationsCounter + 1));
+  G (doorOperationsCounter = 10) -> (next (doorOperationsCounter) = 0);
+}
+
+monitor boolean techGuyInAction {
+  ! techGuyInAction;
+  G ( (doorOperationsCounter = 10 & !technicianAck) -> next(techGuyInAction));
+  G ( technicianAck -> next(!techGuyInAction));
+  G ( (!technicianAck & doorOperationsCounter != 10) -> techGuyInAction = next(techGuyInAction));
+}
+
+// Stop when techGuyInAction
+guarantee stopWhenTechGuyInAction:
+G (techGuyInAction -> stopping);
+
+// Start technical job iff entering techGuyInAction state
+guarantee
+G (PREV(!techGuyInAction) & techGuyInAction <-> startTechnicalJob );
+
+monitor Int(0..4) lastPassedStation {
+  lastPassedStation = stationNone;
+  G (atStation -> next(lastPassedStation) = station);
+  G (!atStation -> next(lastPassedStation) = lastPassedStation);
+}
+
+// tasks are complete only when stopping and opening door at the station
+
+// Keeps shuttle direction
+monitor Direction shuttleDirection{
+  shuttleDirection = GOING_NONE;
+  G atBaseStation & noRequests & longTimeWithoutRequests & stopping -> next(shuttleDirection) = GOING_NONE;
+  G forwarding -> next(shuttleDirection) = GOING_FWD;
+  G backwarding -> next(shuttleDirection) = GOING_BWD;
+  G !forwarding & !backwarding & !(atBaseStation & noRequests & longTimeWithoutRequests) -> next(shuttleDirection) = shuttleDirection;
+}
+
+// updates tasks (bw or fw) array: indexOpenedDoor -> false, indexPressed -> true
+predicate updateTasks(boolean[4] tasks ,Int(0..4) indexPressed, Int(0..4) indexOpenedDoor):
+  next(tasks[0]) = ((indexOpenedDoor != 0) & (tasks[0] | (indexPressed = 0))) &
+  next(tasks[1]) = ((indexOpenedDoor != 1) & (tasks[1] | (indexPressed = 1))) &
+  next(tasks[2]) = ((indexOpenedDoor != 2) & (tasks[2] | (indexPressed = 2))) &
+  next(tasks[3]) = ((indexOpenedDoor != 3) & (tasks[3] | (indexPressed = 3)));
+
+predicate isTaskDirectionFwdOrNoTask(Direction d, Int(0..4) stationLast, Int(0..4) s):
+  ((d = GOING_FWD &  (stationLast - s < 0)) | 
+  (d = GOING_BWD & (stationLast - s < 0)) );
+
+predicate isTaskDirectionBwdOrNoTask(Direction d, Int(0..4) stationLast, Int(0..4) s):
+  ((d = GOING_FWD &  (stationLast - s >= 0)) | 
+  (d = GOING_BWD & (stationLast - s >= 0)) );
+
+// Addition of task in shuttleTasksFwd (+ keep shuttleTasksBwd the same)  
+guarantee
+  G isTaskDirectionFwdOrNoTask(shuttleDirection, lastPassedStation, pressedStation)  -> updateTasks(shuttleTasksFwd, pressedStation, pickUpStation) & updateTasks(shuttleTasksBwd, 4, 4);
+
+// Addition of task in shuttleTasksBwd (+ keep shuttleTasksFwd the same)  
+guarantee
+  G isTaskDirectionBwdOrNoTask(shuttleDirection, lastPassedStation, pressedStation) -> updateTasks(shuttleTasksBwd, pressedStation, pickUpStation) & updateTasks(shuttleTasksFwd, 4, 4);
+
+// Go to base station
+guarantee
+  pRespondsToS(noRequests & longTimeWithoutRequests, atBaseStation);
+
+///////////////////////////////////////
+// Safety of the system
+///////////////////////////////////////
+
+// At base station: stop and don't change tasks status
+guarantee 
+G ( (noRequests & atBaseStation) -> stopping & updateTasks(shuttleTasksFwd, 4, 4) & updateTasks(shuttleTasksBwd, 4, 4));
+
+guarantee onlyAllowedBwdFwdStop:
+G (forwarding | backwarding | stopping);
+
+///////////////////////////////////////
+// Liveness of system
+///////////////////////////////////////
+
+guarantee allRequestsAreSatisfaidEventually:
+  GF (noRequests);

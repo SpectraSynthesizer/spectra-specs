@@ -1,0 +1,74 @@
+import "../patterns/DwyerPatterns.spectra"
+
+module AirportShuttle
+
+env Station station;
+env Button stopButton;
+
+sys MotorCmd mLeft;
+sys MotorCmd mRight;
+
+type Button = {PRESSED, RELEASED};
+type MotorCmd = {FWD, STOP, BWD};
+type Station = {ONE, TWO, THREE, FOUR, NONE};
+
+define 
+  stopping := mLeft = STOP & mRight = STOP;
+  forwarding := mLeft = FWD & mRight = FWD;
+  turning := mLeft != mRight;
+  atStation := station != NONE;
+ 
+
+///////////////////////////////////////
+// Environment Specification
+/////////////////////////////////////
+ 
+// Leave station eventually
+assumption leaveStationEventually:
+pRespondsToS (forwarding, !atStation);
+  
+// Station does not change when stopping
+assumption stationDoesNotChangeWhenStopping:
+G (stopping -> station = next (station) );
+
+// StopRequest is not always pressed
+assumption notAlwaysStopAtNearestStation:
+GF !stopAtNearestStation;
+
+
+///////////////////////////////////////
+// System Specification
+///////////////////////////////////////
+
+// Initial stop
+guarantee initialStop:
+stopping;
+
+// Stop if atStation and stopRequest is pressed 
+guarantee
+G (atStation & stopAtNearestStation -> stopping);
+
+/**
+ * monitor stopAtNearestStation is true when XXX
+ */
+monitor boolean stopAtNearestStation {
+  //
+  !stopAtNearestStation;
+  //
+  G ((stopButton = PRESSED) <-> next(stopAtNearestStation)=!stopAtNearestStation);
+} 
+
+
+///////////////////////////////////////
+// Safety of the system
+///////////////////////////////////////
+
+
+///////////////////////////////////////
+// Liveness of system
+///////////////////////////////////////
+
+// Always go forward
+guarantee alwaysGoForward:
+GF forwarding;
+

@@ -1,0 +1,46 @@
+module c
+
+env Color color0;
+env Color color1;
+env Color color2;
+
+sys Int(0..2) a;
+sys Int(0..2) b;
+
+aux Color aColor;
+aux Color bColor;
+
+type Color = {RED, GREEN, BLUE, EMPTY, NOT};
+
+// store the current colors in aColor and bColor 
+predicate assign(Int(0..2) index, Color colorIndex):
+  ((index = 0) -> colorIndex = color0) &
+  ((index = 1) -> colorIndex = color1) &
+  ((index = 2) -> colorIndex = color2) ;
+
+gar G assign(a, aColor) & assign(b, bColor);
+
+
+// set the next colors to aColor and bColor
+predicate setColor(Int(0..2) index, Color color):
+  ((index = 0) -> next(color0)=color) &
+  ((index = 1) -> next(color1)=color) &
+  ((index = 2) -> next(color2)=color) ;
+
+//gar noNextColorClash;
+//gar G noNextColorClash;
+//gar a!=b; 
+asm G setColor(a, aColor) & setColor(b, bColor);
+//asm G setColor(1, RED) & setColor(2, BLUE);
+//gar aColor = RED & bColor = BLUE;
+//gar a = 1 & b = 2;
+//gar G next(a) =1 & next(b) = 2;
+
+// this is added to make the environment well-separated
+//define noNextColorClash := (aColor != bColor) -> (a != b);
+//gar noNextColorClash;
+//gar G next(noNextColorClash);
+
+
+gar a!=b;
+gar G next(a)!=next(b);

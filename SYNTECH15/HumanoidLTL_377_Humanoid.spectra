@@ -1,0 +1,48 @@
+module Humanoid
+		env {CLEAR, BLOCKED} Obstacle ;
+		env {FWD, TURN, BWD} InputMoveMode ;
+		sys {FWD, BWD, STOP} LeftMotor ;
+		sys {FWD, BWD, STOP} RightMotor ;
+		sys {FWD, BWD, STOP} HeadMotor ;
+		sys {FWD, TURN, BWD} OutputMoveMode ;
+
+guarantee 
+	G((InputMoveMode = FWD & Obstacle = BLOCKED) -> ((OutputMoveMode = BWD & LeftMotor = BWD & RightMotor = FWD)));
+
+guarantee 
+	G((InputMoveMode = BWD & Obstacle = CLEAR) -> ((OutputMoveMode = FWD & LeftMotor = FWD & RightMotor = BWD)));
+
+guarantee
+	G  ((InputMoveMode = FWD & Obstacle = CLEAR) -> (LeftMotor = FWD & RightMotor = FWD));
+
+guarantee
+	G ((Obstacle = BLOCKED) -> (OutputMoveMode = BWD));
+--LTLSPEC --turn
+	--G((OutputMoveMode=TURN & InputMoveMode=FWD) -> (LeftMotor = BWD & RightMotor = STOP));
+	
+--LTLSPEC --first turn
+	--G((OutputMoveMode=TURN & InputMoveMode=FWD) -> (next(LeftMotor = STOP & RightMotor = FWD)));
+	
+--LTLSPEC --second
+	--G(((InputMoveMode=TURN) & (RightMotor=FWD)) -> ((OutputMoveMode = TURN) & next(LeftMotor = FWD & RightMotor = STOP)));
+
+--LTLSPEC --third
+	--G(((InputMoveMode=TURN) & (LeftMotor=BWD)) -> ((OutputMoveMode = TURN) & next(LeftMotor = STOP & RightMotor = BWD)));
+		
+--LTLSPEC 
+	--G (_Obstacle=CLEAR -> (HeadMotor = STOP));
+	
+--LTLSPEC -- initial state
+	 --OutputMoveMode=TURN;
+	
+assumption
+  respondsTo((OutputMoveMode=BWD),(Obstacle=CLEAR));
+	--G ((InputMoveMode = FWD & OutputMoveMode = TURN) -> next (!(InputMoveMode = FWD)));
+	--G(((InputMoveMode = FWD)) -> F(!(InputMoveMode = FWD)));
+	
+pattern respondsTo(trigger, response) {
+  var boolean responded;
+  responded;
+  G (next(responded) iff (response or responded and !trigger));
+  GF (responded);
+}

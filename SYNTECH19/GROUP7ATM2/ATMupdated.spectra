@@ -1,0 +1,130 @@
+module ATMupdated
+
+// **************************************************
+// 					TYPE DEFINITIONS
+// **************************************************
+type userActions = { LOGIN, QUIT, TIMEOUT, WITHDRAW, DEPOSIT, BALANCE, TRANSFER, NONE };
+type bankActions = { APPROVED, NOT_APPROVED, OFFLINE, NONE};
+type query = { USERQUERY, BANKQUERY}; 
+type currentActions = {NONE, WITHDRAW, DEPOSIT, BALANCE, TRANSFER};
+
+// **************************************************
+// 			ENVIRONMENT CONTROLLED VARIABLES
+// **************************************************
+env boolean cardInserted; // indicates whether a credit card was inserted to the ATM
+env boolean pinInserted; // indicates whether PIN code was inserted by a user
+env userActions userAction; // indicates which action was made by the user
+env bankActions bankAction; // indicates which action was made by the bank
+
+// **************************************************
+// 			SYSTEM CONTROLLED VARIABLES
+// **************************************************
+sys query currentQuery; // indicates whether system is currently waiting for user's or bank's response
+sys boolean swallowed; // indicates whether user's card has been swallowed
+sys boolean updatedLoggedIn; // indicates whether a user is currently logged in to the system
+sys currentActions currentAction; // indicates which request is currently being handled by the system
+sys boolean startTimer; // indicates whether a timer for user's request should be initiated
+
+// **************************************************
+// 					ASSUMPTIONS
+// **************************************************
+// initial assumption 
+// at the initial state no user is occupying the system and no action is being made by bank\user
+asm initialAssumptions:
+		!cardInserted & !pinInserted & userAction = NONE & bankAction = NONE;
+//asm G (userAction != QUIT & cardInserted & !cardSwallowed) -> next(cardInserted);
+asm G (userAction != QUIT & userAction != TIMEOUT & cardInserted & loggedIn) -> next(cardInserted);
+
+// Communication assumptions
+// if system is currently handling bank operation, bank must respond while user is unable to make an action
+asm G currentQuery = BANKQUERY -> next(userAction) = NONE & next(bankAction)!=NONE;
+// if system is waiting for user's request, bank won't make an action
+asm G currentQuery = USERQUERY -> next(bankAction) = NONE;
+
+// Login process
+//asm G loggedIn & userAction != QUIT & userAction != TIMEOUT -> next(cardInserted);
+// card can be removed only after quit or timeout (or card swallowed)
+asm G userAction != QUIT & userAction != TIMEOUT & !cardSwallowed -> next(cardInserted);
+//---
+// if user is attempting to login, user's card and pin remain entered
+asm G pinInserted & userAction = LOGIN -> next(pinInserted) & next(cardInserted);
+// if user gets authorized, his next action won't be a login attempt
+asm G !loggedIn & cardInserted & pinInserted & bankAction = APPROVED -> next(cardInserted) & !(next(userAction)=LOGIN);
+asm G loggedIn -> !(next(userAction) = LOGIN);
+// if user quits or times out, user takes out his card in the next step
+asm G (userAction = QUIT | userAction = TIMEOUT) -> next(userAction = NONE) & !next(cardInserted) & !next(pinInserted);
+// if user's card gets swallowed he is not able to perform another action
+asm G cardSwallowed -> next(userAction = NONE) & !next(cardInserted) & !next(pinInserted);
+
+
+// **************************************************
+// 						GUARANTEES
+// **************************************************
+// initial guarantees - system waits for user's input and no card has been swallowed
+gar initialGuarantee:
+		currentQuery = USERQUERY;
+gar initialGuarantee2:
+		!swallowed;
+//---
+// These guarantees help detect immediate change in state, without 1 step delay
+gar G swallowed <-> cardSwallowed;
+gar G updatedLoggedIn <-> next(loggedIn);
+//---
+
+// ATM Features
+// Communication guarantees 
+// after user quits or times out, system expects user input (and not bank input)
+gar G ((userAction = NONE) | (userAction = QUIT) | (userAction = TIMEOUT)) -> (currentQuery = USERQUERY);
+// after a login attempt, system communicates with the bank for approval
+gar G cardInserted & pinInserted & userAction = LOGIN -> currentQuery=BANKQUERY;
+// if card is inserted but user is not authorized, system waits for user's attempt to login
+gar G cardInserted & !pinInserted & !loggedIn -> currentQuery=USERQUERY;
+// if no card is inserted, system should wait for future user's action. no need to communicate with bank
+gar G !cardInserted -> currentQuery = USERQUERY;
+// for each user's request, system will for bank's approval by setting currentQuery to BANKQUERY
+gar G loggedIn & (userAction = WITHDRAW | userAction = DEPOSIT | userAction = TRANSFER | userAction = BALANCE) -> currentQuery = BANKQUERY;
+//---
+// if no user is logged in, no action is expected
+gar G !updatedLoggedIn -> currentAction = NONE; 
+// if user is logged in, update currentAction according to user's request. will help the system remember which request is currently being handled
+gar G !updatedLoggedIn | ((userAction = WITHDRAW -> currentAction = WITHDRAW) & (userAction = TRANSFER -> currentAction = TRANSFER)
+		& (userAction = DEPOSIT -> currentAction = DEPOSIT) & (userAction = BALANCE -> currentAction = BALANCE));
+gar G !updatedLoggedIn | (currentQuery = BANKQUERY -> (currentAction = next(currentAction)));
+// in case the user has just logged in
+gar G updatedLoggedIn & !loggedIn -> currentAction = NONE;
+// initiate the timer iff the system is waiting for an authorized user's request
+gar G startTimer <-> (updatedLoggedIn) & (currentQuery = USERQUERY);
+
+// **************************************************
+// 						DEFINES
+// **************************************************
+// if user failed to login twice already and was denied by bank once again, card should be swallowed
+define cardSwallowed := (attempts = 2) & (bankAction = NOT_APPROVED); 
+
+// **************************************************
+// 						MONITOR
+// **************************************************
+/**
+ * monitor whether user is in logged in state
+ */
+monitor boolean loggedIn {
+	!loggedIn;
+	G(((cardInserted & pinInserted & bankAction = APPROVED) | loggedIn) & !(userAction = QUIT | userAction = TIMEOUT) <-> next(loggedIn));
+}
+
+// **************************************************
+// 						COUNTER
+// **************************************************
+/**
+ * attempts counts the number of unsuccessful login attempts
+ * after attempts reaches 3, system will notify that user's card should be swallowed
+ */
+counter attempts(0..3) {
+	// initially set attempts to zero
+	attempts=0;
+	// increment whenever a wrong pin was entered
+	inc:cardInserted & !loggedIn & (bankAction = NOT_APPROVED) & pinInserted;
+	// reset if card was taken or logged in successfully 
+	reset:!cardInserted | loggedIn;
+	overflow:keep;
+}

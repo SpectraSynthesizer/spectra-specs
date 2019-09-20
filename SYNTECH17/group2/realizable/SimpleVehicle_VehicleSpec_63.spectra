@@ -1,0 +1,152 @@
+---
+import "../patterns/DwyerPatterns.spectra"
+module VehicleSpec			
+
+env Distance frontSense;
+env Distance backSense;
+//env ParkingSpotStatus status; 
+//env ParkingType parkingTypeFound; 
+
+
+sys MotorCmd driveMotor;
+sys SenseMotorCmd senseMotor; 
+sys AngleCmd steeringMotor; 
+sys Int(1..5) velocity;
+//sys ParkingType parkingMode;
+
+type SenseMotorCmd = {SCANNING, REVERSE};
+type MotorCmd = {FWD, STOP, BWD};
+type Distance = {BLOCKED, CLOSE, MEDIUM, FAR, VERY_FAR, CLEAR};
+type ParkingSpotStatus = {STARTED_SCANNING, FINISHED_SCANNING, NONE};
+type ParkingType = {PARALLEL, REVERSED, NONE};
+type AngleCmd = {HARD_LEFT, LIGHT_LEFT, STRAIGHT, LIGHT_RIGHT, HARD_RIGHT};
+
+define
+  stopping := driveMotor = STOP ;
+  forwarding := driveMotor = FWD; 
+  reversing := driveMotor = BWD ;
+  light_left_fwd := steeringMotor = LIGHT_LEFT & driveMotor = FWD;
+  light_left_bwd := steeringMotor = LIGHT_LEFT & driveMotor = BWD;
+  hard_left_fwd := steeringMotor = HARD_LEFT & driveMotor = FWD;
+  hard_left_bwd := steeringMotor = HARD_LEFT & driveMotor = BWD;
+  light_right_fwd := steeringMotor = LIGHT_RIGHT & driveMotor = FWD;
+  light_right_bwd := steeringMotor = LIGHT_RIGHT & driveMotor = BWD;
+  hard_right_fwd := steeringMotor = HARD_RIGHT & driveMotor = FWD;
+  hard_right_bwd := steeringMotor = HARD_RIGHT & driveMotor = BWD;
+  sideways := light_left_fwd | light_left_bwd | hard_left_fwd | hard_left_bwd | light_right_fwd | light_right_bwd | hard_right_fwd | hard_right_bwd;
+  
+ // reverseParking := (senseMotor = REVERSE & sense = CLOSE & parking = BLOCKED) -> (driveMotor = STOP & steeringMotor = 45);
+ // parallelParking := parking = BLOCKED -> (driveMotor = STOP & steeringMotor = 45);
+ // foundAParallelSpot := (parkingTypeFound = PARALLEL & status = FINISHED_SCANNING);
+ // foundAReverseSpot := (parkingTypeFound = REVERSED & status = FINISHED_SCANNING);
+  //scanning := status = STARTED_SCANNING & sense != BLOCKED;
+    
+guarantee initialStop:
+    stopping & senseMotor = SCANNING & steeringMotor = STRAIGHT;
+
+//gar ifFrontIsNotBlockedDrive:
+//  GF frontSense != BLOCKED -> forwarding;
+
+//gar
+//  G (stopping & senseMotor = DRIVE) -> 
+//guarantee initialDirection:
+//  senseMotor = DRIVE;
+//
+////The car starts in a non-parking mode - it begins in a drive-ready and parking-spot searching mode  
+//guarantee initalNotParking:
+//  parkingMode = NONE;
+  
+
+
+//If scanning has begun, keep it up until we get note from the environment that the spot is large enoguh
+//guarantee keepScanning:
+//  G scanning -> forwarding; //If scanning has begun, keep it up
+//
+////Begin a parking in parallel  
+//guarantee startParkingInParallel:
+//  pRespondsToS(foundAParallelSpot, parallelParking);
+//
+////Begin a parking in reverse
+//guarantee startParkingInReverse:
+//  pRespondsToS(foundAReverseSpot, reverseParking);
+
+//rotate the sense motor (reverse) when moving backward
+gar
+  G (driveMotor = BWD & backSense != BLOCKED) -> senseMotor = REVERSE;
+
+//Make sure we don't crash while moving forward 
+guarantee dontCrashFront:
+  G frontSense = BLOCKED -> driveMotor != FWD;
+  
+//Make sure we don't crash while moving backward
+guarantee dontCrashBack:  
+  G  (backSense = BLOCKED & senseMotor = REVERSE) -> driveMotor != BWD;
+
+//Eventually, the car will move forward, drive somewhere
+guarantee keepMovingForward:
+  GF forwarding & steeringMotor = STRAIGHT;  //!stopping;
+
+
+//guarantee   
+//
+//guarantee goIfClear:
+//  GF forwarding | reversing;
+//Don't drive forward without the main distance sensor positioned forward
+
+
+////Eventually, the car will be parked
+//guarantee finishedParking:
+//  GF reverseParking | parallelParking;  
+
+//While moving backward always do so in a slow and controlled manner
+guarantee speedWhileInReverse:
+  G (senseMotor = REVERSE & reversing) -> velocity = 1;
+
+//guarantee getOutOfParking:
+//    pRespondsToS(parkingMode = PARALLEL | parkingMode = REVERSED, parkingMode = NONE);
+  
+//Change the speed of the car according to its distance from an obstacle
+guarantee speedWhileClear:
+  G (frontSense = CLEAR & !reversing) -> velocity = 5;
+guarantee speedWhileVeryFar:
+  G (frontSense = VERY_FAR & !reversing) -> velocity = 4;
+guarantee speedWhileFar:
+  G (frontSense = FAR & !reversing) -> velocity = 3;
+guarantee speedWhileMedium:
+  G (frontSense = MEDIUM & !reversing) -> velocity = 2;
+guarantee speedWhileClose:
+  G frontSense = CLOSE -> velocity = 1;
+
+
+//Assume that some degree of movement exists in the environment 
+assumption canGetClear:
+  pRespondsToS(reversing | (next(steeringMotor) != steeringMotor & reversing) , frontSense != BLOCKED);
+  
+//assumption 
+  //pRespondsToS(sideways, frontSense != BLOCKED & backSense != BLOCKED);
+  
+assumption 
+  pRespondsToS(hard_right_bwd | light_right_bwd | hard_left_bwd | light_left_bwd  , frontSense != BLOCKED);
+assumption 
+  pRespondsToS(hard_right_fwd | light_right_fwd | hard_left_fwd | light_left_fwd  , backSense != BLOCKED);
+
+//assumption
+//  pRespondsToS(forwarding, senseMotor = REVERSE & sense != BLOCKED);
+
+
+
+
+//assumption backOrFrontClear:
+//  GF (senseMotor = DRIVE & sense != BLOCKED); 
+//assumption backClear:
+//  GF (senseMotor = REVERSE & sense != BLOCKED);
+
+////Assume that a parking spot that is large enough to contain the car
+//assumption aParkingSpotExists:
+//  GF parkingTypeFound = REVERSED | parkingTypeFound = PARALLEL;
+//
+////The car is not initially parked
+//assumption notParkedInitially:
+//  parkingTypeFound = NONE & status = NONE;
+  
+//We are not going to stay in the parking spot forever

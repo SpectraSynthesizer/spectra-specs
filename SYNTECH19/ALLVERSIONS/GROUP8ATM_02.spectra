@@ -1,0 +1,101 @@
+import "./patterns/DwyerPatterns.spectra"
+/*
+ * RequestStatus process has been added - 
+ * this is a system indication for the bank's response for user's request.
+ * assumptions for this process has been added -lines 77-80
+ * loginAttempts counter has been added with 'reachedMaxFailes' system indication for it.
+ */
+module ATM			
+
+type Operation = {LOGIN, DEPOSIT, WITHDRAW, BALANCE, LOGOUT, NONE};
+type Response = {YES, NO, NO_CONNECTION};
+type RequestStatus = {APPROVED, REJECTED, CONNECTION_ERROR, NONE};
+
+define
+	noneRequest := userRequest = NONE;
+	logoutRequest := userRequest = LOGOUT;
+	loginRequest := userRequest = LOGIN;
+	balanceRequest := userRequest = BALANCE;
+	depositRequest := userRequest = DEPOSIT;
+	withdrawRequest := userRequest = WITHDRAW;
+	userTransactionReq := depositRequest | withdrawRequest | balanceRequest;
+	
+	noBankResponse := bankResponse = NO_CONNECTION;
+	bankApproved := bankResponse = YES;
+	bankRejected := bankResponse = NO;
+	
+	statusApproved := requestStatus = APPROVED;
+	statusRejected := requestStatus = REJECTED;
+	statusErr := requestStatus = CONNECTION_ERROR;
+	statusNone := requestStatus = NONE;
+	
+	
+ 
+-------environment variables
+//user
+env boolean cardInserted;
+env Operation userRequest;
+
+//Bank
+env Response bankResponse;
+
+-------system variables
+//wait for bank response to valid login request
+sys boolean waitBankLoginResponse; 
+//wait for bank response to valid transaction request(deposit,withdraw,balance)
+sys boolean waitBankTransactionResponse; 
+//current status of valid request from the previous state
+sys RequestStatus requestStatus;
+
+sys boolean reachedMaxFailes;
+
+
+
+-------assumptions
+//initial
+asm !cardInserted & noneRequest & noBankResponse;
+// if no request has been sent to the bank, bank won't answer
+asm G (!waitBankLoginResponse & !waitBankTransactionResponse) -> next(noBankResponse);
+// if we are waiting for bank response - the user won't send request on the next state
+asm G (waitBankLoginResponse | waitBankTransactionResponse) -> next(noneRequest);
+// bank can not reject balance request - only approve or not being connected
+asm G (waitBankTransactionResponse & balanceRequest) -> next(!bankRejected);
+// if card is not inserted there is no user request
+asm G ((!cardInserted) -> (next(noneRequest)));
+// card is still in if there is no logout request
+asm G ((cardInserted & (next(!logoutRequest))) -> (next(cardInserted)));
+
+-------guarantees
+//initial
+gar !waitBankLoginResponse & !waitBankTransactionResponse & (statusNone);
+
+//waiting bank response
+gar G (loginRequest & cardInserted & !userLoggedIn) <-> waitBankLoginResponse;
+gar G (userTransactionReq & userLoggedIn) <-> waitBankTransactionResponse;
+
+//update user request status according to bank response
+gar G (waitBankTransactionResponse | waitBankLoginResponse) & next(bankApproved) <-> next(statusApproved);
+gar G (waitBankTransactionResponse | waitBankLoginResponse) & next(bankRejected) <-> next(statusRejected);
+gar G (waitBankTransactionResponse | waitBankLoginResponse) & next(noBankResponse) <-> next(statusErr);
+gar G (!waitBankLoginResponse & !waitBankTransactionResponse) <-> next(statusNone);
+
+gar G ((loginAttempts >= 3) <-> reachedMaxFailes);
+
+//login status
+monitor boolean userLoggedIn {
+	!userLoggedIn;
+	G next(userLoggedIn) = 
+	((userLoggedIn & !logoutRequest) | (statusApproved & !userLoggedIn)
+	);
+}
+
+
+counter loginAttempts(0..3) {
+// initially loginAttempts is set to zero
+loginAttempts=0;
+// increment every time that pin was incorrectly inserted
+inc:((!userLoggedIn) & next(statusRejected));
+// reset if logged into the system or logout
+reset:((!cardInserted) | (userLoggedIn));
+overflow:keep;
+}

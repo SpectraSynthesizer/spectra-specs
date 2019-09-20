@@ -1,0 +1,161 @@
+import "../patterns/DwyerPatterns.spectra"
+
+module AirportShuttle
+
+env Int(0..3) station;
+env boolean atStation;
+
+env boolean pressedStationOne;
+env boolean pressedStationTwo;
+env boolean pressedStationThree;
+env boolean pressedStationFour;
+
+sys MotorCmd motors;
+sys boolean[4] shuttleTasks;
+
+type MotorCmd = {FWD, STOP, BWD};
+
+predicate atGivenStation(Int(0..3) index):
+  atStation & station=index;
+
+define 
+  stopping := motors = STOP;
+  forwarding := motors = FWD;
+  backwarding := motors = BWD;
+  
+  willEnterStation := !atStation & next(atStation);
+  
+  noTasks := shuttleTasks[0]=false & 
+             shuttleTasks[1]=false & 
+             shuttleTasks[2]=false & 
+             shuttleTasks[3]=false;
+  
+  noPressedStations := !pressedStationOne & 
+                       !pressedStationTwo & 
+                       !pressedStationThree & 
+                       !pressedStationFour;
+  
+  satisfiesTask :=((shuttleTasks[0] & atGivenStation(0) -> next(shuttleTasks[0]=false)) &
+                   (shuttleTasks[1] & atGivenStation(1) -> next(shuttleTasks[1]=false)) &
+                   (shuttleTasks[2] & atGivenStation(2) -> next(shuttleTasks[2]=false)) &
+                   (shuttleTasks[3] & atGivenStation(3) -> next(shuttleTasks[3]=false)));
+  
+  addTasks := (pressedStationOne -> next(shuttleTasks[0]=true)) &
+              (pressedStationTwo -> next(shuttleTasks[1]=true)) &
+              (pressedStationThree -> next(shuttleTasks[2]=true)) &
+              (pressedStationFour -> next(shuttleTasks[3]=true));
+  
+  keepTasksStatus := ((!pressedStationOne   & (!atGivenStation(0) | shuttleTasks[0] = false)) -> next(shuttleTasks[0]) = shuttleTasks[0]) &
+                     ((!pressedStationTwo   & (!atGivenStation(1) | shuttleTasks[1] = false)) -> next(shuttleTasks[1]) = shuttleTasks[1]) &
+                     ((!pressedStationThree & (!atGivenStation(2) | shuttleTasks[2] = false)) -> next(shuttleTasks[2]) = shuttleTasks[2]) &
+                     ((!pressedStationFour  & (!atGivenStation(3) | shuttleTasks[3] = false)) -> next(shuttleTasks[3]) = shuttleTasks[3]);
+
+  stationWillIncrease := next(station) = station+1;
+  stationWillDecrease := next(station) = station-1;
+  
+  
+///////////////////////////////////////
+// Environment Specification
+/////////////////////////////////////
+
+assumption initialStateEnv:
+ station = 0 & atStation & noPressedStations;
+
+// Leave station eventually
+assumption leaveStationEventually:
+  pRespondsToS (atStation & ((forwarding & station < 3) | (backwarding & station > 0)), !atStation | stopping);
+
+//// In station eventually
+assumption inStationEventually:
+  pRespondsToS (!atStation & (forwarding | backwarding), atStation | stopping);
+
+assumption
+  G !willEnterStation -> next(station) = station;
+
+assumption
+  G stationWillIncrease -> willEnterStation & forwarding;
+
+assumption
+  G stationWillDecrease -> willEnterStation & backwarding;
+
+// Station does not change when stopping
+assumption stationDoesNotChangeWhenStopping:
+  G  (stopping -> ((atStation = next(atStation)) & (station = next(station))));
+  
+assumption
+  G ((atGivenStation(0)) -> !pressedStationOne) &
+    ((atGivenStation(1)) -> !pressedStationTwo) &
+    ((atGivenStation(2)) -> !pressedStationThree) &
+    ((atGivenStation(3)) -> !pressedStationFour) ;
+
+//assumption
+//  GF noPressedStations;
+    
+assumption
+  GF !pressedStationOne; 
+
+assumption
+  GF !pressedStationTwo; 
+
+assumption
+  GF !pressedStationThree; 
+
+assumption
+  GF !pressedStationFour;   
+
+///////////////////////////////////////
+// System Specification
+///////////////////////////////////////
+    
+// Initial state 
+guarantee initialState:
+  stopping & noTasks;
+
+ //satisfiesTask
+guarantee
+ G satisfiesTask;
+ 
+guarantee
+ G satisfiesTask -> stopping;
+
+guarantee
+  G addTasks; 
+ 
+guarantee
+  pHolds_afterQuntilR(forwarding, !atStation, stationWillIncrease);
+
+guarantee
+  pHolds_afterQuntilR(backwarding, !atStation, stationWillDecrease);  
+  
+///////////////////////////////////////
+// Safety of the system
+///////////////////////////////////////
+
+// Don't change tasks status if not needed (needed = add task or satisfies task)
+guarantee
+  G keepTasksStatus;
+
+// if no tasks stop when entering station
+guarantee
+  G atStation & noTasks -> stopping;
+   
+///////////////////////////////////////
+// Liveness of system
+///////////////////////////////////////
+
+//guarantee allTasksAreSatisfaidEventually:
+//  GF (noTasks);
+
+guarantee
+  GF shuttleTasks[0]=false;
+
+guarantee
+  GF shuttleTasks[1]=false;
+
+guarantee
+  GF shuttleTasks[2]=false;
+
+guarantee
+  GF shuttleTasks[3]=false;
+
+  

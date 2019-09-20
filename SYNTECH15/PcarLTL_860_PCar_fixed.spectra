@@ -1,0 +1,267 @@
+// Initial file contents for AspectLTL aspect file (*.altl)
+module PCar
+ env {CLEAR, BLOCKED} obstacle ;
+ env {CLOSE, CENTERED, FAR, CLOSE_PARKING, PARALLEL_PARKING ,PERPENDICULAR} sideSense;
+ env {NA,PARALLEL} parkResult;
+ env {BLACK, GREEN, RED} colorSense;
+ env {AUTO,MANUAL,FWD,BWD,FWD_RIGHT,FWD_LEFT,BWD_LEFT,BWD_RIGHT,RIGHT,LEFT,CENTER} command;
+ env {FREE, PRESSED} reset;
+ 
+ sys {FWD, BWD, STOP,BLOCKING_BWD, BLOCKING_FWD, EXIT_FWD} throttle ;
+ sys {RIGHT,LEFT, CENTER, EASY_RIGHT, EASY_LEFT} steer ;
+ sys {START,STOP,CHECK} parkCommand ;
+ sys {SEEKING,MEASURING,PARKING_0,PARKING_1,PARKING_2,PARKED, EXIT_0,EXIT_1} spec_policy;
+
+
+//initial state -- seeking for a parking space
+guarantee
+( spec_policy=SEEKING );
+
+-----------
+-- GOALS --
+-----------
+//Goal State - be at a parked state.
+guarantee
+  GF ((spec_policy=PARKED&colorSense=GREEN)|command!=AUTO);
+ 
+// LTLSPEC
+// G(command=AUTO -> command=AUTO);
+//
+// LTLSPEC
+// G(command!=AUTO  -> spec_isAuto = FALSE);
+// 
+  guarantee
+ G(command=MANUAL   -> throttle=STOP & steer=CENTER); 
+ 
+ 
+ guarantee
+ G(command=FWD  -> throttle=FWD & steer=CENTER);
+ 
+  guarantee
+   G((command=BWD)-> throttle=BWD & steer=CENTER); 
+ 
+   guarantee
+ G((command=RIGHT) ->( steer=RIGHT & throttle=STOP)); 
+ 
+    guarantee
+ G((command=LEFT)-> steer=LEFT  & throttle=STOP); 
+ 
+     guarantee
+ G((command=CENTER)-> steer=CENTER & throttle=STOP ); 
+ 
+    guarantee
+ G((command=FWD_LEFT)-> steer=LEFT & throttle=FWD );
+ 
+    guarantee
+ G((command=FWD_RIGHT)-> steer=RIGHT & throttle=FWD);  
+ 
+     guarantee
+ G((command=BWD_LEFT)-> steer=LEFT & throttle=BWD );
+ 
+     guarantee
+ G( command=BWD_RIGHT -> steer=RIGHT & throttle=BWD);
+ 
+ 
+ 
+ 
+
+ guarantee
+ -------------------------
+ -- ALLOWED TRANSITIONS --
+ ------------------------- 
+ G((spec_policy = SEEKING)-> (next(spec_policy)=SEEKING| next(spec_policy) = MEASURING| next(spec_policy) = PARKING_0));
+ guarantee
+ G ((spec_policy = SEEKING & command=AUTO ) -> ((throttle = FWD | throttle = STOP | throttle = BWD)));
+ guarantee
+  G ((spec_policy = SEEKING & obstacle = CLEAR & command=AUTO ) -> (!(steer = RIGHT | steer = LEFT )));
+
+ 
+ guarantee
+ G((spec_policy = MEASURING)-> (next(spec_policy)=SEEKING| next(spec_policy) = MEASURING| next(spec_policy) = PARKING_0));
+  guarantee
+ G ((spec_policy = MEASURING & command=AUTO) -> (throttle != BLOCKING_BWD & parkCommand != START & (steer = CENTER | steer = EASY_LEFT | steer = EASY_RIGHT)));
+ 
+ 
+ guarantee
+ G((spec_policy = PARKING_0)-> (next(spec_policy)=(PARKING_1)));
+ guarantee
+ G((spec_policy = PARKING_1)-> (next(spec_policy)=(PARKING_2)));
+ guarantee
+ G((spec_policy = PARKING_2)-> (next(spec_policy)=(PARKED)));
+ guarantee
+ G((spec_policy = PARKED)-> (next(spec_policy)=(PARKED) | next(spec_policy)=(EXIT_0)));
+ guarantee
+ G((spec_policy = EXIT_0)-> (next(spec_policy)=(EXIT_1)));
+ guarantee
+ G((spec_policy = EXIT_1)-> (next(spec_policy)=(SEEKING)));
+// LTLSPEC
+// G((spec_policy = EXIT_2)-> (next(spec_policy)=(SEEKING)));
+ 
+
+------------------
+-- SAFTEY SPECS --
+------------------
+
+guarantee
+ G (((obstacle = CLEAR) & (spec_policy=SEEKING) & parkResult = NA & command=AUTO)->(throttle = FWD));
+
+
+//if blocked when looking for parking space dont start parking & don't run into obstacles 
+guarantee
+ G(((obstacle=BLOCKED) & (spec_policy = SEEKING | spec_policy = MEASURING) & command=AUTO) ->(next(spec_policy) = SEEKING) & !(throttle = FWD | throttle = BLOCKING_FWD | throttle = BLOCKING_BWD) & !(steer = EASY_RIGHT | steer = EASY_LEFT));
+ 
+//if blocked stop  timing the distance of the parking spot 
+guarantee
+ G((obstacle=BLOCKED)->(parkCommand=STOP));
+ 
+guarantee
+G ((spec_policy = SEEKING & parkResult=NA & command=AUTO) -> (throttle != STOP));
+
+------------------------
+-- SEEKING ALLIGNMENT --
+------------------------
+ guarantee
+ G((spec_policy=SEEKING & obstacle = CLEAR & PREV(obstacle = BLOCKED) & command=AUTO) -> (steer=CENTER));
+ 
+ //Allign left
+ guarantee
+ G((spec_policy=SEEKING & obstacle = CLEAR &  sideSense = CLOSE & command=AUTO  & PREV(obstacle = CLEAR))  -> (steer=EASY_LEFT));
+ 
+  //Allign right
+ guarantee
+ G((spec_policy=SEEKING & obstacle = CLEAR &  sideSense = FAR & command=AUTO  & PREV(obstacle = CLEAR)) -> (steer=EASY_RIGHT));
+
+ //Allign center
+ guarantee
+ G((spec_policy=SEEKING & obstacle = CLEAR &  sideSense = CENTERED & (PREV(sideSense = CENTERED)) & command=AUTO & PREV(obstacle = CLEAR)) -> (steer=CENTER));
+ 
+ guarantee
+ G((spec_policy = SEEKING & obstacle = CLEAR & PREV(sideSense = FAR) & sideSense = CENTERED & command=AUTO & PREV(obstacle = CLEAR)) ->
+ (steer=EASY_LEFT));
+ 
+ guarantee
+ G((spec_policy = SEEKING & obstacle = CLEAR & PREV(sideSense = CLOSE) & sideSense = CENTERED & command=AUTO & PREV(obstacle = CLEAR)) ->
+ (steer=EASY_RIGHT));
+ 
+ 
+  //Allign left
+ guarantee
+ --------------------------
+ -- MEASURING ALLIGNMENT --
+ --------------------------
+ G((spec_policy=MEASURING & obstacle = CLEAR &  sideSense = CLOSE_PARKING & command=AUTO) -> (steer=EASY_LEFT));
+ 
+  //Allign right
+ guarantee
+ G((spec_policy=MEASURING & obstacle = CLEAR &  sideSense = PERPENDICULAR & command=AUTO) -> (steer=EASY_RIGHT));
+
+  //Allign center
+ guarantee
+ G((spec_policy=MEASURING & obstacle = CLEAR &  sideSense = PARALLEL_PARKING & PREV(sideSense = PARALLEL_PARKING) & command=AUTO) -> (steer=CENTER));
+ guarantee
+ G((spec_policy=MEASURING & obstacle = CLEAR &  sideSense = PARALLEL_PARKING & PREV(sideSense = CLOSE_PARKING) & command=AUTO) -> (steer=EASY_RIGHT));
+ guarantee
+ G((spec_policy=MEASURING & obstacle = CLEAR &  sideSense = PARALLEL_PARKING & PREV(sideSense = PERPENDICULAR) & command=AUTO) -> (steer=EASY_LEFT));
+ 
+-----------------------
+-- STATE TRANSITIONS --
+----------------------- 
+ 
+//Seeking --> Seeking
+guarantee
+G(((spec_policy = SEEKING) & (sideSense = CLOSE | sideSense = CENTERED | sideSense = FAR))
+-> ((next(spec_policy) = spec_policy) & (parkCommand = STOP)));
+
+
+//Seeking --> Measuring
+guarantee
+ G (((spec_policy = SEEKING) & !(sideSense = CLOSE | sideSense = CENTERED | sideSense = FAR) & (obstacle = CLEAR)& command=AUTO)
+ -> (next(spec_policy) = MEASURING) & throttle=FWD & parkCommand=START & steer = CENTER);
+ 
+
+//Measuring --> Seeking 
+guarantee
+ G (((spec_policy = MEASURING) & (sideSense = CLOSE | sideSense = CENTERED | sideSense = FAR) &(parkResult =NA))
+ -> (next(spec_policy) = SEEKING)  & (parkCommand = STOP));
+
+//Measuring --> Measuring
+
+guarantee
+ G (((spec_policy = MEASURING) & !(sideSense = CLOSE | sideSense = CENTERED | sideSense = FAR) & (obstacle = CLEAR) &(parkResult =NA)& command=AUTO)
+ -> (next(spec_policy) = spec_policy) & throttle=FWD & parkCommand=CHECK);
+ 
+ //Measuring --> Parking_0
+guarantee
+ G (((((spec_policy = MEASURING & sideSense = PARALLEL_PARKING)|(spec_policy=SEEKING & PREV(sideSense = PARALLEL_PARKING) & PREV(spec_policy=MEASURING)))) & (obstacle = CLEAR) &(parkResult =PARALLEL) & command=AUTO)
+ -> (next(spec_policy) = PARKING_0) & (throttle = STOP) & (parkCommand = STOP) );
+
+//Parking_0--> Parking_1 
+guarantee
+ G ((spec_policy = PARKING_0 & command=AUTO)
+ -> (next(spec_policy) = PARKING_1) & (throttle = BLOCKING_FWD) & steer = CENTER & (parkCommand = STOP));
+ 
+ //Parking_1--> Parking_2 
+guarantee
+ G ((spec_policy = PARKING_1 & command=AUTO)
+ -> (next(spec_policy) = PARKING_2) & (throttle = BLOCKING_BWD) & steer = RIGHT & (parkCommand = STOP));
+
+ 
+ //Parking_2--> Parked 
+guarantee
+ G ((spec_policy = PARKING_2 & command=AUTO)
+ -> (next(spec_policy) = PARKED) & (throttle = BLOCKING_BWD) & steer = LEFT & (parkCommand = STOP));
+
+
+//Parked--> Parked 
+guarantee
+ G (((spec_policy = PARKED) & colorSense = GREEN & reset = FREE & command=AUTO)
+ -> (next(spec_policy) = spec_policy) & (throttle = STOP) & (steer = CENTER) & (parkCommand = STOP));
+ 
+//Parked-->Exit_0
+guarantee
+ G (((spec_policy = PARKED) & (!(colorSense = GREEN) | reset = PRESSED ) & command=AUTO)
+ -> (next(spec_policy) = EXIT_0) & (throttle = EXIT_FWD) & (steer = LEFT) & (parkCommand = STOP));
+
+//Exit_0-->Exit_1 
+guarantee
+ G (((spec_policy = EXIT_0 ) & command=AUTO)
+ -> (next(spec_policy) = EXIT_1) & (throttle = EXIT_FWD) & (steer = RIGHT) & (parkCommand = STOP));
+
+//Exit_1-->Seeking
+guarantee
+ G (((spec_policy = EXIT_1) & command=AUTO)
+ -> (next(spec_policy) = SEEKING) & (steer = CENTER) & (throttle = STOP));
+ 
+-----------------------------
+-- ENIVRONMENT ASSUMPTIONS --
+-----------------------------
+ 
+assumption
+G ((spec_policy = SEEKING)->next(parkResult = NA));
+
+assumption
+  GF ((spec_policy=MEASURING)&(parkResult=PARALLEL)&(obstacle=CLEAR));
+
+assumption
+parkResult = NA & command=AUTO & reset = FREE;
+
+assumption
+  respondsTo((throttle=BWD),(obstacle=CLEAR));
+
+assumption
+ G ((throttle=STOP)->((obstacle=next(obstacle))&(sideSense=next(sideSense))));
+ 
+assumption
+G ((spec_policy != PARKED) -> next(colorSense = BLACK));
+
+assumption
+  GF ((spec_policy=PARKED&colorSense=GREEN&reset=FREE));
+
+ 
+
+pattern respondsTo(trigger, response) {
+  var boolean responded;
+  responded;
+  G (next(responded) iff (response or responded and !trigger));
+  GF (responded);
+}

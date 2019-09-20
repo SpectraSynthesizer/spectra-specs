@@ -1,0 +1,205 @@
+///////////////////////////
+// V2.Continuous
+///////////////////////////
+
+module ControllerSpec
+
+    env { CLEAR, BLOCKED } cargo ;
+    env { CLEAR, BLOCKED } sense ;
+    env boolean station ;
+    env boolean emgOff ;
+    env boolean liftAck ;
+
+    sys { FWD, STOP, BWD } mLeft ;
+    sys { FWD, STOP, BWD } mRight ;
+    sys { LIFT, DROP, NIL } lift ;
+
+    sys boolean spec_loaded ;
+  
+    sys boolean spec_waitingForLifting ;
+
+  define
+    backing := mLeft = BWD & mRight = BWD;
+    stopping := mLeft = STOP & mRight = STOP;
+    turning := mLeft = BWD & mRight = FWD | mLeft = FWD & mRight = BWD;
+    forwarding := mLeft = FWD & mRight = FWD;
+    
+    dropping := lift = DROP;
+    lifting := lift = LIFT;
+    
+    lowObstacle := (cargo = BLOCKED & station);
+    obstacle := sense = BLOCKED;
+
+  // Environment Specification
+  /////////////////////////////////////
+
+  // A1 find cargo if going forward to next station
+  assumption
+  respondsTo((forwarding&!spec_loaded),((station&cargo=BLOCKED)|backing|stopping));
+  assumption
+  respondsTo((forwarding&spec_loaded),((station&cargo=CLEAR)|backing|stopping));
+
+  // A2 leave station eventually
+  assumption
+  respondsTo((forwarding),(!station|stopping|turning));
+  assumption
+  respondsTo((backing),(!station|stopping|turning));
+    
+  // unblock path if backing or turning
+  assumption
+  respondsTo((backing|turning),((sense=CLEAR&cargo=CLEAR)|forwarding|stopping));
+
+  // station does not change when stopping
+  assumption
+    G (stopping -> station = next(station));
+  
+  
+  assumption
+    !liftAck;
+  
+
+    
+  assumption
+  respondsTo(spec_waitingForLifting,liftAck);
+    
+  // no strange lifting acks
+  assumption
+    G (next(liftAck) -> (spec_waitingForLifting & !liftAck));
+
+
+  // System Specification
+  ///////////////////////////////////////
+
+  // initial state
+  guarantee
+    stopping & lift = NIL & !spec_loaded & !spec_waitingForLifting;
+  
+  guarantee
+    G ((lift=LIFT | lift=DROP) -> next(spec_waitingForLifting));
+  guarantee
+    G (liftAck -> ((lift=LIFT | lift=DROP) | next(!spec_waitingForLifting)));
+  guarantee
+    G (!((lift=LIFT | lift=DROP) | liftAck) -> spec_waitingForLifting = next(spec_waitingForLifting));
+  
+  guarantee
+    G (spec_waitingForLifting -> stopping);
+    
+  // local var spec_loaded 
+  //////////////////////////////////////
+  guarantee
+    G (liftAck & !spec_loaded -> next(spec_loaded));
+  guarantee
+    G (liftAck & spec_loaded -> next(!spec_loaded));
+  guarantee
+    G (!liftAck ->  spec_loaded = next(spec_loaded));
+ 
+  guarantee 
+    G (spec_waitingForLifting -> lift=NIL);
+ 
+  // G3 restricting lifting action based on var spec_loaded
+  guarantee
+    G (spec_loaded -> !lifting);
+
+  guarantee
+    G (!spec_loaded -> !dropping);
+  ////////////////////////////////////////
+  
+  guarantee
+  respondsTo((((stopping|backing)&!emgOff)SINCE(obstacle|lowObstacle)),(spec_fullTurn|emgOff|cargo=BLOCKED));
+    
+    sys boolean spec_fullTurn ;
+    sys Int(0..15) spec_counter ;
+    
+  guarantee
+     spec_counter=0;
+  guarantee
+    G ((spec_counter=15) <-> spec_fullTurn);
+  guarantee
+    G ((!turning | PREV !turning) -> next(spec_counter=0));
+  guarantee
+    G (turning & (PREV turning) & (spec_counter!=15) -> next(spec_counter)=(spec_counter+1));
+  guarantee
+    G (turning & (PREV turning) & (spec_counter=15) -> next(spec_counter)=0);
+
+  // G1 dont run into obstacles
+  guarantee
+    G ((obstacle | lowObstacle) -> ! forwarding);
+  // don't mess with low obstacles
+  guarantee
+    G (cargo=BLOCKED -> !turning);
+
+  // don't lift if no cargo found
+  guarantee
+    G (cargo = CLEAR -> !lifting);
+    
+  // don't move while lifting or dropping
+  guarantee
+    G (lift != NIL -> stopping);
+
+  guarantee // do nothing if stopped
+    G (emgOff -> (stopping & lift=NIL)); 
+
+  // only turn, go, stop or back
+  guarantee
+    G (forwarding | turning | stopping | backing);
+
+  // liveness of system
+  ///////////////////////////////////////
+
+  //G4
+  guarantee
+  GF ((lift=DROP)|emgOff|lowObstacle|obstacle);
+    
+    
+///////////////////////
+//  Patterns
+
+--  GUARANTEE -- have to leave station to deliver 
+--  (!atStation) occurs between 
+--               (lift=LIFT) and (lift=DROP);  --P09    
+
+  sys { S0, S1, S2} spec_stateGP1 ;
+
+guarantee -- initial assignments: initial spec_stateGP1
+  spec_stateGP1=S0;
+
+guarantee -- safety this and next spec_stateGP1
+  G ((spec_stateGP1=S0 & ((!(lift=LIFT) & !(!station)) | ((lift=LIFT) & (lift=DROP)) | (!(lift=DROP) & (!station)) | (!(lift=LIFT) & (lift=DROP) & (!station))) & next(spec_stateGP1=S0)) |
+  (spec_stateGP1=S0 & ((lift=LIFT) & !(lift=DROP) & !(!station)) & next(spec_stateGP1=S1)) |
+  (spec_stateGP1=S1 & (!(lift=DROP) & (!station)) & next(spec_stateGP1=S0)) |
+  (spec_stateGP1=S1 & (!(lift=DROP) & !(!station)) & next(spec_stateGP1=S1)) |
+  (spec_stateGP1=S1 & ((lift=DROP)) & next(spec_stateGP1=S2)) |
+  (spec_stateGP1=S2 & next(spec_stateGP1=S2)));
+
+guarantee -- equivalence of satisfaction
+  GF (spec_stateGP1=S0|spec_stateGP1=S1|obstacle);
+
+  
+-- GUARANTEE  
+-- Globally (lift!=DROP S lift=LIFT) after
+--  (!atStation) until (atStation) --P20  
+
+  sys { S0, S1, S2} spec_stateGP2 ;
+
+guarantee -- initial assignments: initial spec_stateGP2
+  spec_stateGP2=S0;
+
+guarantee -- safety this and next spec_stateGP2
+  G ((spec_stateGP2=S0 & ((!(!station) & !station) | (station)) & next(spec_stateGP2=S0)) |
+  (spec_stateGP2=S0 & ((!station) & !(lift=NIL) & !station) & next(spec_stateGP2=S1)) |
+  (spec_stateGP2=S0 & ((!station) & (lift=NIL) & !station) & next(spec_stateGP2=S2)) |
+  (spec_stateGP2=S1 & next(spec_stateGP2=S1)) |
+  (spec_stateGP2=S2 & (station) & next(spec_stateGP2=S0)) |
+  (spec_stateGP2=S2 & (!(lift=NIL) & !station) & next(spec_stateGP2=S1)) |
+  (spec_stateGP2=S2 & ((lift=NIL) & !station) & next(spec_stateGP2=S2)));
+
+guarantee -- equivalence of satisfaction
+  GF (spec_stateGP2=S0|spec_stateGP2=S2|obstacle);
+
+
+pattern respondsTo(trigger, response) {
+  var boolean responded;
+  responded;
+  G (next(responded) iff (response or responded and !trigger));
+  GF (responded);
+}

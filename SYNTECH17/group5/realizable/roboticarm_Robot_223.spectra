@@ -1,0 +1,31 @@
+module b
+
+env Color color0;
+env Color color1;
+env Color color2;
+
+sys Int(0..2) a;
+sys Int(0..2) b;
+
+aux Color aColor;
+aux Color bColor;
+
+type Color = {RED, GREEN, BLUE, EMPTY, NOT};
+
+//assigns colorIndex = colors[index];
+predicate assign(Int(0..2) index, Color colorIndex):
+  ((index = 0) -> colorIndex = color0) &
+  ((index = 1) -> colorIndex = color1) &
+  ((index = 2) -> colorIndex = color2) ;
+
+gar G assign(a, aColor);
+gar G assign(b, bColor);
+
+
+
+define
+  swap :=
+    (aColor = next(bColor)) &
+    (bColor = next(aColor)) ;
+
+asm G swap;

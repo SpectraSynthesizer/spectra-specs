@@ -1,0 +1,246 @@
+module x
+
+
+env Color s0;
+env Color s1;
+env Color s2;
+
+env Task task;
+
+
+sys boolean isMoving;
+sys Int(0..5) from;
+sys Int(0..5) to;
+
+//these vars store the colors of the balls that 'from' and 'to' point to
+aux Color fromColor;
+aux Color toColor;
+
+
+/*
+ * EMPTY denotes an empty station
+ * NOT denotes a not exists station. For example, if there're only 4 stations, then the stations[4] = NOT, and stations[5] = NOT
+ * 
+ */
+type Color = {RED, GREEN, BLUE, EMPTY, NOT};
+
+/*
+ * During the INIT mode, the robot scans the stations, and checks how many stations there're, and what are their balls' colors
+ * MOVE moves the ball from 'from' to 'to', assuming 'to' is an empty station
+ * NOTHING means that the robot stands and does not move, and just does nothing
+ * 
+ * Notice that MOVE essentially swaps between 'from' and 'to',
+ * as after MOVE 'from' points to the empty place that previously was in the place 'to' points to,
+ * and 'to' points to the ball that previously was in the place pointed to by 'from'
+ */
+ 
+
+
+
+type Task = {
+  SCAN,
+  SORT //sorts the stations using mode = MOVE, and then satisfies mode = NOTHING 
+//  EXCHANGE, //exchanges two different colored balls using mode = MOVE
+//  
+//  SWAP_RED_AND_BLUE,
+//  MOVE_RED_LEFT,
+//  GATHER_REDS,
+//  
+//  //MANUAL_MOVE, //move from 'from' to 'to'
+//  //HANOI_MOVE,
+//  //STOP_MOVING,
+//  //SHUT OFF,
+//  
+//  //MOVE_RIGHT,
+//  //MOVE_LEFT,
+//  //MOVE_UP,
+//  //MOVE_DOWN,
+//   
+//  HANOI
+//  
+};
+
+
+
+gar moveRequirements:
+  G (isMoving) -> (fromColor != NOT & toColor = EMPTY);
+
+
+//assigns colorIndex = colors[index];
+predicate assign(Int(0..5) index, Color colorIndex):
+  ((index = 0) -> colorIndex = s0) &
+  ((index = 1) -> colorIndex = s1) &
+  ((index = 2) -> colorIndex = s2) ;
+
+gar G assign(from, fromColor);
+gar G assign(to, toColor);
+
+
+
+// set the next colors to aColor and bColor
+predicate setColor(Int(0..5) index, Color color):
+  ((index = 0) -> next(s0)=color) &
+  ((index = 1) -> next(s1)=color) &
+  ((index = 2) -> next(s2)=color) ;
+  
+asm saveOnStaying:
+  G !isMoving & task != SCAN -> saveAll;
+
+//asm saveOnMoving:
+//  G isMoving -> (onExchangeSave & swap);
+
+
+gar
+  from != to;
+gar
+  G next(from) != next(to);
+
+
+asm saveOnMoving:
+  G (isMoving & task != SCAN) -> (onExchangeSave & swap);
+  
+
+define
+   //all the colors stay in their positions
+  saveAll :=
+    (next(s0) = s0) &
+    (next(s1) = s1) &
+    (next(s2) = s2) ;
+    
+  //when we swap between 'from' and 'to' we need to save the values of all the places except 'from' and 'to' 
+  onExchangeSave :=
+   
+    (((from != 0) & (to!=0)) -> ((next(s0) = s0))) &
+    (((from != 1) & (to!=1)) -> ((next(s1) = s1))) &
+    (((from != 2) & (to!=2)) -> ((next(s2) = s2))) ;
+
+  
+  //define
+  //  swap :=
+  //    (fromColor = next(toColor)) &
+  //    (toColor = next(fromColor)) ;
+  swap :=
+    setColor(from, toColor) & setColor(to, fromColor);
+    
+    
+
+//asserts that the station in this index existsPred
+predicate existsPred(Int(0..5) index):
+  
+  ((index = 0) -> (s0 != NOT)) &
+  ((index = 1) -> (s1 != NOT)) &
+  ((index = 2) -> (s2 != NOT)) ;
+
+
+
+
+/*
+ * 
+ * 
+ * 
+ * 
+ * ------------------ SCAN TASK ---------------
+ * 
+ * 
+ * 
+ * 
+ */
+
+asm startWithScan:
+  task = SCAN;
+
+/*
+ * 
+ * ----------- SORT TASK ------------
+ * 
+ * 
+ */
+
+
+asm continueSortUntilDone:
+  G (task = SORT & !sortDone) -> next(task) = SORT; 
+  
+gar
+  GF (task = SORT & sortAsms) -> sortDone;
+
+gar
+  G task = SORT & sortDone -> !isMoving;
+
+      
+   
+   
+//all of the stations (excluding empty and non-existing stations)
+//contain balls are colored in 'color' (the input color) 
+predicate allEqual(Color color):
+  ((s0 = color) | (s0 = EMPTY) | (s0 = NOT)) &
+  ((s1 = color) | (s1 = EMPTY) | (s1 = NOT)) &
+  ((s2 = color) | (s2 = EMPTY) | (s2 = NOT)) ;
+
+  
+define
+   
+   /*
+    * These assumptions are needed as in the general case the generated automaton
+    * requires more heap memory than the standard heap memory in Eclipse.
+    * So, we need to focus on special cases.
+    * 
+    */
+ 
+   
+   
+  sortAsms :=
+    somethingEmpty & firstStationsExist;
+    //somethingEmpty & firstStationsExist & somethingExists & !equal;
+
+
+/*
+ * The stations are ordered such that the non-existing stations are to the end
+ * 
+ * This is needed as otherwise, sorting were not possible,
+ * as sorting never moves non-existing stations, and in sorted array,
+ * the non-existing ones should be to the end
+ * 
+ * This is implemented in the following way:
+ * if something does not exist,
+ * then its successor must also not exist,
+ * and so does its successor, and so forth.
+ *  
+ */
+ 
+  firstStationsExist :=
+    ((s0 = NOT) -> (s1 = NOT)) &
+    ((s1 = NOT) -> (s2 = NOT)) ;
+    
+    
+ 
+  somethingEmpty := 
+ 
+    (s0 = EMPTY) |
+    (s1 = EMPTY) |
+    (s2 = EMPTY) ;
+  
+  
+  
+  
+   sortDone :=
+    
+      (s0 <= s1) &
+      (s1 <= s2) ;
+//      (s2 <= s3) &
+//      (s3 <= s4) &
+//      (s4 <= s5) ;
+//
+
+
+predicate isColor(Color color):
+  color != EMPTY & color != NOT;
+  
+define
+  strongAssumptions :=
+    s0 = EMPTY &
+    s1 = RED &
+    s2 = NOT ;
+
+asm G next(strongAssumptions);
+//notice that we really have both
+asm G task = SCAN -> strongAssumptions;

@@ -1,0 +1,177 @@
+import "./patterns/DwyerPatterns.spectra"
+
+
+module ATM
+
+--types
+type Operations = {NONE, EXIT, WITHDRAW, BALANCE, DEPOSIT};
+type Inserted = {ENTERED, NOT_ENTERED};
+type Communicate = {USER, BANK};
+type Response = {APPROVED, DENIED, NO_CONNECTION};
+type TimerStatus = {SET,ON, OFF};
+type DeclineExplain = {NONE, FAILED_PIN, NOT_ENOUGH_CREDIT, CONNECTION_ERROR};
+
+-- environment variables
+--USER SENSORS--
+env Inserted userCard;
+env Inserted userPIN;
+env Operations operationRequest;
+--BANK--
+env Response bankResponse;
+--TIMERS--
+env boolean operationTimerDone;
+env boolean loginTimerDone;
+env boolean bankTimerDone;
+
+-- system variables
+sys Communicate comWith;
+sys TimerStatus operationTimer;
+sys TimerStatus loginTimer;
+sys boolean timedOut; --True if system expects timer sensor
+sys DeclineExplain declineReason;
+sys TimerStatus bankTimer;
+sys Operations transactionHandled;
+
+define
+	cardInserted := userCard = ENTERED;
+	PINInserted := userPIN = ENTERED;
+	bankApproved := bankResponse = APPROVED;
+	bankDenied := bankResponse = DENIED;
+	bankNotConnected := bankResponse = NO_CONNECTION;
+	failedThreeLogin := (countWrongPinNumber = 3);
+	preLogin:= !verifiedUser&!exiting;
+	noTransactionHandled := transactionHandled=NONE;
+	noRequest := operationRequest=NONE;
+	transactionRequset := operationRequest = WITHDRAW | operationRequest = BALANCE | operationRequest = DEPOSIT;
+	askBank := comWith=BANK;
+	askUser := comWith=USER;
+	startOperationTimer := operationTimer=SET;
+	operationTimerOff := operationTimer=OFF;
+	startLoginTimer := loginTimer=SET;
+	loginTimerOff := loginTimer=OFF;
+	startBankTimer := bankTimer=SET;
+	bankTimerOff := bankTimer=OFF;
+	anyTimerDone := loginTimerDone|operationTimerDone;
+	
+--A user is verified from the point the bank approved the PIN number until he asked to exit or was exited by the system
+monitor boolean verifiedUser{
+	!verifiedUser;
+	G next(verifiedUser) = ((cardInserted & handleLogin & next(bankApproved)) | (verifiedUser & operationRequest!=EXIT & !timedOut));
+}
+
+--When system is on exit mode it is waiting for the user to take his card and won't allow any request
+monitor boolean exiting{
+	!exiting;
+	G next(exiting) = ((exiting|((operationRequest=EXIT|next(failedThreeLogin|bankTimerDone))&cardInserted|timedOut))&next(cardInserted));
+}
+
+--The system will only handle a login request from the user if he is not logged in and he inserted a PIN number
+--The system will keep handling a correct login request until the bank will respond or until a bank time out will occur
+monitor boolean handleLogin{
+	!handleLogin;
+	G next(handleLogin) = ((handleLogin&next(bankNotConnected&!bankTimerDone&!exiting))|next(!exiting&!verifiedUser&PINInserted&cardInserted&declineReason=NONE));
+}
+
+--The system will handle a transaction request only if the user is verified
+--The system will keep handling a verified transaction request until the bank will respond or until a bank time out will occur
+monitor boolean handleTransaction{
+	!handleTransaction;
+	G next(handleTransaction) = ((handleTransaction&next(bankNotConnected&!bankTimerDone&!exiting))|(next(verifiedUser&transactionRequset&cardInserted&!exiting&declineReason=NONE)&verifiedUser&!handleTransaction));
+}
+
+-- ==== COUNTER FOR BAD LOGIN TRIES === --
+counter countWrongPinNumber(0..3) {
+		-- initially no tries
+        countWrongPinNumber = 0;
+		-- user entered wrong pin number
+        inc: !verifiedUser&bankDenied&!exiting;
+		--  reset counter when pin number entered correctly or user logout
+        reset: (verifiedUser&bankApproved | exiting);
+		-- wrong exactly 3 times
+        overflow:keep;
+}
+
+-----========ASSUMPTIONS=======----
+-- ======= INITIAL STATE ======= --
+asm !cardInserted & !PINInserted & bankNotConnected & noRequest & !loginTimerDone & !operationTimerDone & !bankTimerDone;
+
+-- ===== LIVENESS assumptions==== --
+-- A user will try the login process
+asm GF cardInserted;
+-- any session must end
+asm GF operationRequest=EXIT | anyTimerDone;
+-- The card will be taken by the user if the system is in exiting process
+asm pRespondsToS(!cardInserted, exiting);
+-- The bank may or may not be online
+asm GF (!bankNotConnected|bankTimerDone);
+
+---==== USER SENSORS ====---
+--Sensor will only allow gracefully card withdrawal
+asm G cardInserted&!exiting-> next(cardInserted);
+--Only one user sensor will be altered in a single step
+asm G !PINInserted&next(PINInserted)->next(noRequest);
+asm G noRequest&next(!noRequest)->next(!PINInserted);
+asm G !cardInserted&next(cardInserted) -> next(noRequest & !PINInserted);
+
+---=== TIMER SENSOR === ---
+--Any timer is not done if it is not set by the system
+predicate timerOffOrActionSetOffTimer(TimerStatus timer, boolean action, boolean doneSensor){
+	(timer=OFF | next(action))->next(!doneSensor)
+}
+--Inserting PIN number sets off login timer
+asm PINInsertionTurnOffLoginTimer:
+	G timerOffOrActionSetOffTimer(loginTimer, PINInserted, loginTimerDone);
+--Any operation request sets off the operation timer	
+asm UserRequesSetOffTimer:
+	G timerOffOrActionSetOffTimer(operationTimer, !PINInserted, operationTimerDone);
+--Any response from the bank sets off bank timer
+asm BankResponseSetOffBankTimer:
+	G timerOffOrActionSetOffTimer(bankTimer, !bankNotConnected, bankTimerDone);
+-- ======= BANK ======= --
+--The connection with the bank will be off while it is not needed
+asm G !askBank->next(bankNotConnected);
+
+-----========GUARANTEES=======-----
+---=== INITIAL STATE ===---
+gar askUser & declineReason=NONE & loginTimerOff & operationTimerOff & bankTimerOff& !timedOut;
+
+---=== LIVENESS guarantees ===--- 
+--Every session must end
+gar pRespondsToS(exiting, cardInserted);
+
+-- === COMMUNICATION === ----
+--The system will communicate with bank only if it approved the user's request
+gar G askBank <-> (handleTransaction|handleLogin);
+
+-- == ACCEPTING USERS INQUIERIES === ---
+--When system choose to handle a transaction it will hold it until it will get a response or bank time out
+gar G !handleTransaction&next(handleTransaction)->next(transactionHandled=operationRequest);
+gar G handleTransaction&next(handleTransaction)->next(transactionHandled)=transactionHandled;
+gar G !handleTransaction->noTransactionHandled;
+
+--Any timer is on only if it was set or on in the previous state, and the system still await for the correct sensor
+gar G (loginTimer=ON|startLoginTimer)&next(askUser&!loginTimerDone&!exiting)<->next(loginTimer=ON);
+gar G (operationTimer=ON|startOperationTimer)&next(askUser&!operationTimerDone&!exiting)<->next(operationTimer=ON);
+gar G (bankTimer=ON|startBankTimer)&next(askBank&!bankTimerDone&!exiting)<->next(bankTimer=ON);
+
+
+--- === RESPONSE TO USER ACTIONS ==== ----
+--The system will let an explanation for any failed legal inquiry
+gar G (handleTransaction|handleLogin)&next(bankNotConnected&bankTimerDone)<->next(declineReason=CONNECTION_ERROR);
+gar G handleLogin&next(bankDenied)&!handleTransaction<->next(declineReason=FAILED_PIN);
+gar G handleTransaction&transactionHandled=WITHDRAW&next(bankDenied)<-> next(declineReason=NOT_ENOUGH_CREDIT);
+
+
+--- ==== TIMER === -----
+--A timer will be set while expecting user action
+gar G loginTimerOff&!exiting&next(preLogin&cardInserted&!PINInserted&askUser)<->next(startLoginTimer);
+gar G operationTimerOff&!exiting&next(verifiedUser&askUser&!exiting&cardInserted&!handleTransaction)<->next(startOperationTimer);
+--The bank timer will be off as long as expecting for user input
+gar G askUser<->bankTimerOff;
+--The user timers will be off as long as expecting a bank input
+gar G askBank->(operationTimerOff&loginTimerOff);
+--Any exiting reason will set the timers off
+gar G (timedOut|exiting)->loginTimerOff&operationTimerOff&bankTimerOff;
+--A time out will occur only if the timer is done while waiting to the user action
+gar G ((anyTimerDone)&!handleTransaction&!handleLogin&!exiting&operationRequest!=EXIT)<->timedOut;
+
