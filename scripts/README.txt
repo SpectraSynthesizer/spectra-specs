@@ -1,4 +1,4 @@
-In this folder there are several script for translating different formats:
+In this folder there are several scripts for translating between different formats:
 
 The main script is generate_specs.py:
 -------------------------------------
