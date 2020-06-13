@@ -1,0 +1,136 @@
+import "./DwyerPatterns.spectra"
+module ParkingLot
+
+define
+	numOfSpots := 7;
+	numOfSpotsPlusOne := numOfSpots + 1;
+	numOfSpotsPlusTwo := numOfSpots + 2;
+	killAll := 10;
+	
+	
+//Environment controlled input variables (vehicles and pedestrians)
+env boolean carEntrance; // car is waiting to enter the parking lot
+env boolean carExit; // car is waiting to exit the parking lot
+env boolean[numOfSpotsPlusOne] carInSpot; 
+env boolean enableMain;
+
+env boolean carVipEntrance;
+env boolean carVipExit;
+env boolean pedestrianRight;
+env boolean pedestrianLeft;
+
+
+//System controlled output variables (gates and lights)
+sys boolean gateEntrance; // controls entrance gate
+sys boolean gateExit; // controls exit gate
+sys boolean [numOfSpotsPlusTwo]spotLight; // controls the spot lights in the parking lot
+sys Int(0..numOfSpotsPlusTwo) freeSpot; // indicates a number of a free spot to park in
+sys boolean[numOfSpotsPlusTwo] spotMaintenance;
+sys boolean parkingLotMaintainace;
+
+sys boolean gateVipEntrance;
+sys boolean gateVipExit;
+sys boolean pedetrianRightLight;
+sys boolean pedetrianLeftLight;
+
+sys boolean dummy;
+
+// assumptions
+asm G ((carEntrance & freeSpot != numOfSpotsPlusOne & !pedetrianRightLight & !gateVipEntrance)-> !(next(carEntrance)));
+asm G carExit -> !(next(carExit));
+
+asm G carVipExit -> !(next(carVipExit));
+asm G ((carVipEntrance & freeSpot != numOfSpotsPlusOne & !pedetrianLeftLight)-> !(next(carVipEntrance)));
+
+asm !carExit; // at the beginning the parking lot is empty
+asm !carEntrance; // at the beginning the parking lot is empty
+asm !carVipEntrance;
+asm !carVipExit;
+
+asm G enableMain -> next(enableMain);
+asm G !enableMain -> !next(enableMain);
+
+//At the beginning the gates are closed.
+gar !gateExit;
+gar !gateEntrance;
+
+gar !gateVipExit;
+gar !gateVipEntrance;
+
+gar GF !pedetrianRightLight;
+gar GF !pedetrianLeftLight;
+
+
+gar G (carEntrance & freeSpot != numOfSpotsPlusOne & !gateVipEntrance & !pedetrianRightLight) -> gateEntrance; // if there are spots available in the parking lot - open the gate
+gar G (carExit ) -> gateExit; // if a car wants to exit - open the exit gate
+gar G (carVipExit ) -> gateVipExit; // if a car wants to exit - open the exit gate
+
+gar G gateEntrance -> ! next(gateEntrance); // the gate opens for each car once at a time
+gar G gateExit -> ! next(gateExit); // the gate opens for each car once at a time
+
+// if there is a pedestrian crossing the cross-walk the gate won't open
+gar G pedetrianRightLight -> !gateEntrance;
+gar G pedetrianRightLight -> !gateVipExit;
+
+gar G pedetrianLeftLight -> !gateVipEntrance;
+gar G pedetrianLeftLight -> !gateExit;
+gar G freeSpot = 8 -> !gateEntrance;
+gar G (!carEntrance) -> (!gateEntrance);
+gar G (!carExit) -> (!gateExit);
+
+gar G freeSpot = 8 -> !gateVipEntrance;
+gar G (carVipEntrance & freeSpot != numOfSpotsPlusOne & !pedetrianLeftLight) -> gateVipEntrance; 
+gar G gateVipEntrance -> !gateEntrance;
+
+gar G gateVipEntrance -> ! next(gateVipEntrance); // the gate opens for each car once at a time
+gar G gateVipExit -> ! next(gateVipExit); // the gate opens for each car once at a time
+
+
+gar G (!carVipEntrance) -> (!gateVipEntrance);
+gar G (!carVipExit) -> (!gateVipExit);
+
+// freeSpot update
+gar G forall i in Int(0..numOfSpots).(spotLight[i] <->carInSpot[i]);
+
+
+// find minimum of free spots array
+gar G exists i in Int(0..numOfSpotsPlusOne).forall j in Int(0..numOfSpotsPlusOne).(j<i->(spotLight[j]=true | spotMaintenance[j] = true)) &spotMaintenance[i] = false & spotLight[i]=false & freeSpot=i;  
+
+
+// counts how many regular cars are currently in the parking lot
+counter spotsCounter(0..killAll) {
+	spotsCounter = 0;
+	inc: (!parkingLotMaintainace) & (gateEntrance | gateVipEntrance) & !dummy; 
+	reset: parkingLotMaintainace | dummy;
+	overflow: false;
+}
+
+gar G enableMain -> (spotsCounter < killAll -> !parkingLotMaintainace);
+gar G !enableMain -> !parkingLotMaintainace;
+
+gar G dummy;
+
+gar G forall i in Int(0..numOfSpots).carInSpot[i] -> !spotMaintenance[i];
+gar G forall i in Int(0..numOfSpots).carInSpot[i] -> !next(spotMaintenance[i]);
+
+gar pRespondsToS(pedestrianRight, pedetrianRightLight);
+gar pRespondsToS(pedestrianLeft, pedetrianLeftLight);
+
+
+asm G parkingLotMaintainace -> (forall k in Int(0..numOfSpots).(next(carInSpot[k] = false)));
+gar G parkingLotMaintainace -> (forall k in Int(0..numOfSpotsPlusOne).(next(spotLight[k] = false)));
+gar G parkingLotMaintainace -> (forall k in Int(0..numOfSpotsPlusOne).(next(spotMaintenance[k] = false)));
+
+gar G forall k in Int(0..numOfSpots).spotMaintenance[k]-> (forall i in Int(0..numOfSpots). (!(i=k)) -> (!spotMaintenance[i]));
+
+
+asm G parkingLotMaintainace -> next(!carVipExit);
+asm G parkingLotMaintainace -> next(!carExit);
+asm G parkingLotMaintainace -> next(!carVipEntrance);
+asm G parkingLotMaintainace -> next(!carEntrance);
+
+gar G parkingLotMaintainace -> next(!gateEntrance);
+gar G parkingLotMaintainace -> next(!gateVipEntrance);
+gar G parkingLotMaintainace -> next(!gateExit);
+gar G parkingLotMaintainace -> next(!gateVipExit);
+gar G parkingLotMaintainace -> next(!parkingLotMaintainace);

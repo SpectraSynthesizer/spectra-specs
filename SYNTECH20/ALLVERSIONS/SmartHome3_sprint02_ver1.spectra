@@ -1,0 +1,240 @@
+module SmartHome3_sprint01_ver1
+  
+  
+/* 
+ * Smart-Home has these controls:
+ * 	Time
+ * 	Movement control
+ *  Temperature control
+ *  Cleaning control
+ * 
+ * Each control may has:
+ * 	1 - environment variables
+ * 	2 - environment assumptions
+ * 	3 - system controlled variables
+ *  4 - predicates, counters and monitors
+ * 
+ * All The House's Guarantees are written together in the end of this document.
+ * */ 
+define
+unpleasantTemperatureStateBound:= 10;
+TemperatureMaxChange := 5;
+//__________________ Time  __________________
+define
+saturday := day=7;
+timeunitsPerDay:=12;
+
+counter timeUnit(1..timeunitsPerDay) {
+timeUnit=1;
+inc: true;
+overflow: modulo;
+}
+
+counter day(1..7) {
+day=1;
+inc: timeUnit=1;
+overflow: modulo;
+}
+// Alarm clock
+env Int(1..7) alarmClockDay;
+env Int(1..timeunitsPerDay) alarmClockTimeunit;
+sys boolean alarmClock;
+gar G alarmClock <-> day=alarmClockDay & alarmClockTimeunit=timeUnit;
+
+
+//__________________ Movement control __________________
+
+//_____ environment variables _____
+// movement sensors
+env boolean livingRoomPresenceSensor;
+env boolean kitchenPresenceSensor;
+env boolean bathroomPresenceSensor;
+env boolean bedroomPresenceSensor;
+  
+  predicate houseIsEmpty():
+!livingRoomPresenceSensor& !kitchenPresenceSensor & !bathroomPresenceSensor & !bedroomPresenceSensor;
+  
+// Bedroom light off switch
+env boolean bedroomLightOffSwitch;
+  
+  
+//_____ environment assumptions _____
+// there will be movements in every one of the rooms
+asm GF livingRoomPresenceSensor;
+asm GF kitchenPresenceSensor;
+asm GF bathroomPresenceSensor;
+asm GF bedroomPresenceSensor;
+
+// movement in inner room, can only happen if there was a movement in the room or adjacent room
+asm G ((!livingRoomPresenceSensor) & (!kitchenPresenceSensor)) -> !kitchenPresenceSensor; 
+asm G ((!livingRoomPresenceSensor) & (!bathroomPresenceSensor))-> !bathroomPresenceSensor; 
+asm G ((!livingRoomPresenceSensor) & (!bedroomPresenceSensor)) -> !bedroomPresenceSensor; 
+
+predicate KennyInOneRoomAtMost():
+(!(livingRoomPresenceSensor & kitchenPresenceSensor))  &
+(!(livingRoomPresenceSensor & bathroomPresenceSensor)) &
+(!(livingRoomPresenceSensor & bedroomPresenceSensor)) &
+(!(kitchenPresenceSensor    & bathroomPresenceSensor)) &
+(!(kitchenPresenceSensor    & bedroomPresenceSensor))  &
+(!(bathroomPresenceSensor   & bedroomPresenceSensor)) ;
+
+asm G KennyInOneRoomAtMost();
+
+//_____ system controlled variables _____
+// lights
+sys boolean livingRoomLight;
+sys boolean kitchenLight;
+sys boolean bathroomLight;
+sys boolean bedroomLight;
+   
+// security
+sys boolean mainDoorIsLocked;
+
+
+//__________________ Temperature control __________________
+
+
+
+//_____ environment variables _____
+env Int (1..50) outsideTemperature;
+
+
+//_____ system controlled variables _____ 
+// AC
+sys boolean AC;
+  
+// The affect of the AC on the home temperature such that homeTemperature=outsideTemperature+acAffect
+sys Int(0..100) acAffect;
+sys Int(1..50) homeTemperature;
+
+
+//_____ predicates & counters _____
+predicate houseTemperatureIsPleasant():
+(homeTemperature < 18 | 26 < homeTemperature);
+  
+counter unpleasantTemperatureCounter(0..unpleasantTemperatureStateBound) {
+unpleasantTemperatureCounter=0;
+inc: !houseTemperatureIsPleasant()&!houseIsEmpty();
+reset: houseTemperatureIsPleasant();
+overflow: false;
+}
+
+
+//__________________ Cleaning control __________________
+
+//_____ environment variables _____
+env boolean livingRoomIsDirtySensor;
+env boolean kitchenIsDirtySensor;
+env boolean bathroomIsDirtySensor;
+env boolean bedroomIsDirtySensor;
+
+predicate houseIsDirty():
+livingRoomIsDirtySensor | kitchenIsDirtySensor | bathroomIsDirtySensor | bedroomIsDirtySensor;
+
+//_____ environment assumptions _____
+asm GF livingRoomIsDirtySensor;
+asm GF kitchenIsDirtySensor;
+asm GF bathroomIsDirtySensor;
+asm GF bedroomIsDirtySensor;
+
+//_____ system controlled variables _____
+sys boolean cleaningBotIsActive;
+sys boolean cleaningBotInLivingRoom;
+sys boolean cleaningBotInKitchen;
+sys boolean cleaningBotInBathroom;
+sys boolean cleaningBotInBedroom;
+
+// movement in any room, can only happen if there was a movement in the room or adjacent room
+asm G ((!cleaningBotInLivingRoom) & (!cleaningBotInKitchen)) -> !cleaningBotInKitchen; 
+asm G ((!cleaningBotInLivingRoom) & (!cleaningBotInBathroom))-> !cleaningBotInBathroom; 
+asm G ((!cleaningBotInLivingRoom) & (!cleaningBotInBedroom)) -> !cleaningBotInBedroom; 
+
+//Each room becomes clean after the robot passes in it
+asm G cleaningBotInLivingRoom & cleaningBotIsActive -> next(livingRoomIsDirtySensor);
+asm G cleaningBotInKitchen & cleaningBotIsActive -> !next(kitchenIsDirtySensor);
+asm G cleaningBotInBathroom & cleaningBotIsActive -> !next(bathroomIsDirtySensor);
+asm G cleaningBotInBedroom & cleaningBotIsActive -> !next(bedroomIsDirtySensor);
+
+predicate cleaningBotIsPresent():
+cleaningBotInLivingRoom | cleaningBotInKitchen | cleaningBotInBathroom | cleaningBotInBedroom;
+
+// at any time point, cleaning robot is exactly in 1 room 
+predicate cleaningBotInOneRoom():
+!(cleaningBotInLivingRoom & cleaningBotInKitchen)  &
+!(cleaningBotInLivingRoom & cleaningBotInBathroom) &
+!(cleaningBotInLivingRoom & cleaningBotInBedroom)  &
+!(cleaningBotInKitchen    & cleaningBotInBathroom) &
+!(cleaningBotInKitchen    & cleaningBotInBedroom)  &
+!(cleaningBotInBathroom   & cleaningBotInBedroom) &
+cleaningBotIsPresent() ;
+  
+//__________________ Plants  __________________
+sys boolean waterThePlants;
+//plants are being watered in the middle of each day
+gar G waterThePlants <-> timeUnit=6;
+
+
+//__________________ Refrigerator  __________________
+define
+maxCapacityOfSingleProduct:=10;
+numberOfMonitoredGroceries:=5;
+
+
+env Int(0..maxCapacityOfSingleProduct)[numberOfMonitoredGroceries] refrigeratorAmounts;
+sys Int(1..maxCapacityOfSingleProduct)[numberOfMonitoredGroceries] refrigeratorThresholds;
+gar G refrigeratorThresholds[0] = 3;//milk
+gar G refrigeratorThresholds[1] = 2;//bread
+gar G refrigeratorThresholds[2] = 2;//eggs
+
+
+//________________________________________________
+//_______________ House Guarantees ______________
+//_______________________________________________
+ 
+//_____ Lights _____ 
+// movements make the light turn on or off (Guarantee 1)
+gar G !saturday->(livingRoomPresenceSensor <-> livingRoomLight);
+gar G !saturday->(kitchenPresenceSensor    <-> kitchenLight   );
+gar G !saturday->(bathroomPresenceSensor   <-> bathroomLight  );
+
+// (Guarantee 2)
+gar G !saturday->(bedroomPresenceSensor&!bedroomLightOffSwitch <-> bedroomLight);
+
+// (Requirement 2)
+gar G saturday->(livingRoomLight&kitchenLight&bathroomLight&!bedroomLight);
+//-----
+
+//_____ Security _____  
+// (Guarantee 3) - The main door gets locked when the house is empty 
+gar G houseIsEmpty() -> mainDoorIsLocked;
+  
+  
+// _____ Temperature _____
+//acAffect is gradual
+gar G AC->(next(acAffect)<acAffect+TemperatureMaxChange)&(next(acAffect)>acAffect-TemperatureMaxChange);
+gar G !AC->next(acAffect)=0;
+
+gar G (homeTemperature=outsideTemperature+acAffect-50);//-50 because I couldn't create acAffect as an integer that gets negative values too
+  
+// active AC if house is not empty, and the house is to cold/hot
+gar G ( (!houseIsEmpty() & (homeTemperature < 18 | 26 < homeTemperature))-> AC); 
+
+
+// _____ Cleaning _____ 
+// by default, the cleaning robot is 'off' and park in the living room 
+gar G !houseIsDirty() -> ((!cleaningBotIsActive)& cleaningBotInLivingRoom);
+
+// The robot turned on when the house is dirty
+gar G houseIsDirty() -> cleaningBotIsActive;
+
+// when the a room is dirty - eventually clean it gets cleaned
+gar trig [true]*[livingRoomIsDirtySensor] |=>[true]*[!livingRoomIsDirtySensor];
+gar trig [true]*[kitchenIsDirtySensor] |=>[true]*[!kitchenIsDirtySensor];
+gar trig [true]*[bathroomIsDirtySensor] |=>[true]*[!bathroomIsDirtySensor];
+gar trig [true]*[bedroomIsDirtySensor] |=>[true]*[!bedroomIsDirtySensor];
+
+// at any time point, cleaning robot is exactly in 1 room 
+gar G cleaningBotInOneRoom();
+
+
+

@@ -1,0 +1,93 @@
+spec SmartNeighborhood_sprint1_ver1
+
+//Environment controlled input variables (sensors)
+define N := 4;
+//define streetSize := N + 1;
+define crosswalkLoc := N/2;
+env boolean sidewalkNorth;
+env boolean sidewalkSouth;
+env boolean crossingCrosswalkNS;
+//env boolean crossingCrosswalkSN;
+env boolean[N] garbageCansNorth;
+env boolean[N] garbageCansSouth;
+
+
+
+//System controlled output variables (lights)
+sys boolean isCleaning;
+sys boolean lightNorth;
+sys boolean lightSouth;
+sys boolean[N] garbageTruckNorth;
+sys boolean[N] garbageTruckSouth;
+
+//Initial assumptions
+asm !sidewalkNorth & !sidewalkSouth & !crossingCrosswalkNS; //& !crossingCrosswalkSN;
+asm all_cans_start_empty:
+	forall i in Int(0..(N-1)). (!garbageCansNorth[i] & !garbageCansSouth[i]);
+
+//Assumptions on pedestrian walking routes
+asm G sidewalkNorth -> next(crossingCrosswalkNS);
+asm G crossingCrosswalkNS -> next(sidewalkSouth);
+//asm G sidewalkSouth -> next(crossingCrosswalkSN);
+//asm G crossingCrosswalkSN -> next(sidewalkNorth);
+asm GF !sidewalkNorth;
+asm GF !sidewalkSouth;
+asm GF !crossingCrosswalkNS; //& !crossingCrosswalkSN;
+
+
+//Assumption on garbage cans
+asm GF forall i in Int(0..(N-1)). garbageCansNorth[i];
+asm GF forall i in Int(0..(N-1)). garbageCansSouth[i];
+asm G forall i in Int(0..(N-1)). (garbageTruckNorth[i] & isCleaning -> next(!garbageCansNorth[i]));
+asm G forall i in Int(0..(N-1)). (garbageTruckSouth[i] & isCleaning -> next(!garbageCansSouth[i]));
+
+
+define noTruckNorth := !garbageTruckNorth[0] & !garbageTruckNorth[1]
+& !garbageTruckNorth[2] & !garbageTruckNorth[3];
+
+define noTruckSouth := !garbageTruckSouth[0] & !garbageTruckSouth[1]
+& !garbageTruckSouth[2] & !garbageTruckSouth[3];
+
+define crossing := crossingCrosswalkNS; //| crossingCrosswalkSN;	
+
+//Initial Guarantees
+gar !lightNorth & !lightSouth;
+gar noTruckNorth & noTruckSouth;
+
+//truck Guarantees
+gar G (crossing & garbageTruckNorth[crosswalkLoc]) ->
+    next(garbageTruckNorth[crosswalkLoc]);  //maybe monitor?
+
+gar GF garbageCansNorth[0] & garbageTruckNorth[0] & isCleaning;
+gar GF garbageCansNorth[1] & garbageTruckNorth[1] & isCleaning;
+gar GF garbageCansNorth[2] & garbageTruckNorth[2] & isCleaning;
+gar GF garbageCansNorth[3] & garbageTruckNorth[3] & isCleaning;
+
+gar GF garbageCansSouth[0] & garbageTruckSouth[0] & isCleaning;
+gar GF garbageCansSouth[1] & garbageTruckSouth[1] & isCleaning;
+gar GF garbageCansSouth[2] & garbageTruckSouth[2] & isCleaning;
+gar GF garbageCansSouth[3] & garbageTruckSouth[3] & isCleaning;
+  
+gar G forall i in Int(0..(N-1)). garbageTruckNorth[i] -> (forall j in Int(0..(N-1)). (j!=i & !garbageTruckNorth[j]));
+gar G forall i in Int(0..(N-1)). garbageTruckSouth[i] -> (forall j in Int(0..(N-1)). (j!=i & !garbageTruckSouth[j]));
+
+gar G forall i in Int(0..(N-2)). garbageTruckNorth[i] -> next(garbageTruckNorth[i] or garbageTruckNorth[i+1]);
+gar G forall i in Int(0..(N-2)). garbageTruckSouth[i] -> next(garbageTruckSouth[i] or garbageTruckSouth[i+1]);
+
+gar G forall i in Int(0..(N-1)). isCleaning & garbageTruckNorth[i] -> next(garbageTruckNorth[i]);
+gar G forall i in Int(0..(N-1)). isCleaning & garbageTruckSouth[i] -> next(garbageTruckSouth[i]);
+
+gar G noTruckNorth -> next(garbageTruckNorth[0] or noTruckNorth);
+gar G noTruckSouth -> next(garbageTruckSouth[0] or noTruckSouth);
+
+gar GF noTruckNorth;
+gar GF noTruckSouth;
+
+//Light Guarantees
+gar G sidewalkNorth -> lightNorth;
+gar G sidewalkSouth -> lightSouth;
+gar GF !lightNorth;
+gar GF !lightSouth;
+
+
+

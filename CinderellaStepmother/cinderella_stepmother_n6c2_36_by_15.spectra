@@ -1,0 +1,19 @@
+module Cinderella
+
+define N := 6;
+define C := 2;
+define B := 36;
+define ADDED_WATER_UNITS := 15;
+
+env Int(0..ADDED_WATER_UNITS)[N] waterFills;
+
+sys Int(0..B)[N] buckets;
+sys Int(0..(N - 1)) bucketToEmpty;
+
+asm alw waterFills[0] + waterFills[1] + waterFills[2] + waterFills[3] + waterFills[4] + waterFills[5] = ADDED_WATER_UNITS;
+
+gar forall i in Int(0..(N - 1)). buckets[i] = 0;
+gar G forall i in Int(0..(N - 1)). ((bucketToEmpty <= i & bucketToEmpty > (i-C)) | bucketToEmpty >= (N-C+1+i)) -> (next(buckets[i]) = next(waterFills[i]));
+gar G forall i in Int(0..(N - 1)). !((bucketToEmpty <= i & bucketToEmpty > (i-C)) | bucketToEmpty >= (N-C+1+i)) -> (next(buckets[i]) = buckets[i] + next(waterFills[i]));
+
+

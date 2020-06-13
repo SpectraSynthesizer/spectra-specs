@@ -1,0 +1,220 @@
+import "DwyerPatterns.spectra"
+module SmartHome2
+			
+//Model the following Home:
+//       -------------------------------
+//       |           |                 |
+//       |   Living  |    BedRoom      |
+//       |   Room    |                 |
+//                       ---------------
+//       |                       DOCK  |          
+//       |         ---   ----  --------|
+//       |         |Kitchen |  Bath |
+//       |         |        |  Room |
+//       |         |        |       |
+//       ----------------------------
+
+//Presence
+env boolean presenceBathRoom;
+env boolean presenceLivingRoom;
+env boolean presenceBedRoom;
+env boolean presenceKitchen;
+sys boolean lock;
+
+asm !presenceBathRoom;
+asm !presenceLivingRoom;
+asm !presenceBedRoom;
+asm !presenceKitchen;
+
+define 
+	 fullHouse := presenceBathRoom & presenceBedRoom & presenceKitchen & presenceLivingRoom;
+define 
+	emptyHouse:= !presenceBathRoom & !presenceLivingRoom & !presenceKitchen & !presenceBedRoom;
+define 
+	notEmptyHouse:= presenceBathRoom | presenceLivingRoom | presenceKitchen | presenceBedRoom;
+define 
+	presenceOnlyLivingRoom := !presenceBathRoom & presenceLivingRoom & !presenceBedRoom & !presenceKitchen;
+define 
+ 	presenceOnlyBathRoom := presenceBathRoom & !presenceLivingRoom & !presenceBedRoom & !presenceKitchen;
+define 
+	presenceOnlyBedRoom := !presenceBathRoom & !presenceLivingRoom & presenceBedRoom & !presenceKitchen;
+define 
+	presenceOnlyKitchen := !presenceBathRoom & !presenceLivingRoom & !presenceBedRoom & presenceKitchen;
+
+asm GF !presenceBathRoom&!fire;
+asm GF !presenceBedRoom&!fire;
+asm GF !presenceKitchen&!fire;
+asm GF !presenceLivingRoom&!fire;
+
+ //Moving between rooms logic
+asm G(!presenceBathRoom & !presenceLivingRoom & !presenceBedRoom & !presenceKitchen)->next(!presenceBathRoom & !presenceBedRoom & !presenceKitchen);
+asm G(!presenceBathRoom & !presenceLivingRoom & !presenceBedRoom & presenceKitchen)->next(!presenceBathRoom & !presenceBedRoom & notEmptyHouse);
+asm G(!presenceBathRoom & !presenceLivingRoom & presenceBedRoom & !presenceKitchen)->next(!presenceBathRoom & !presenceKitchen & notEmptyHouse);
+asm G(presenceBathRoom & !presenceLivingRoom & !presenceBedRoom & !presenceKitchen)->next(!presenceBedRoom & !presenceKitchen & notEmptyHouse);
+asm G(!presenceBathRoom & !presenceLivingRoom & presenceBedRoom & presenceKitchen)->next(!presenceBathRoom & notEmptyHouse);
+asm G(!presenceBathRoom & presenceLivingRoom & presenceBedRoom & !presenceKitchen)->next(notEmptyHouse);
+asm G(presenceBathRoom & presenceLivingRoom & !presenceBedRoom & !presenceKitchen)->next(notEmptyHouse);
+asm G(presenceBathRoom & !presenceLivingRoom & !presenceBedRoom & presenceKitchen)->next(!presenceBedRoom & notEmptyHouse);
+asm G(!presenceBathRoom & presenceLivingRoom & !presenceBedRoom & presenceKitchen)->next(notEmptyHouse);
+asm G(presenceBathRoom & !presenceLivingRoom & presenceBedRoom & !presenceKitchen)->next(!presenceKitchen & notEmptyHouse);
+asm G(!presenceBathRoom & presenceLivingRoom & presenceBedRoom & presenceKitchen)->next(notEmptyHouse & !presenceOnlyBathRoom & !presenceOnlyBedRoom & !presenceOnlyKitchen & !(presenceBathRoom&presenceBedRoom&!presenceLivingRoom&!presenceKitchen) & !(!presenceBedRoom&presenceKitchen&presenceBathRoom&!presenceLivingRoom));
+asm G(presenceBathRoom & presenceLivingRoom & presenceBedRoom & !presenceKitchen)->next(notEmptyHouse & !presenceOnlyBathRoom & !presenceOnlyBedRoom & !presenceOnlyKitchen & !(presenceBedRoom&presenceKitchen&!presenceLivingRoom&!presenceBathRoom) & !(!presenceBedRoom&presenceKitchen&!presenceLivingRoom&presenceBathRoom));
+asm G(presenceBathRoom & !presenceLivingRoom & presenceBedRoom & presenceKitchen)->next(notEmptyHouse & !presenceOnlyBathRoom & !presenceOnlyBedRoom & !presenceOnlyKitchen & !(presenceBedRoom&presenceKitchen&!presenceBathRoom&!presenceLivingRoom) & !(!presenceBedRoom&presenceKitchen&presenceBathRoom&!presenceLivingRoom) & !(presenceBedRoom&!presenceKitchen&presenceBathRoom&!presenceLivingRoom));
+asm G(presenceBathRoom & presenceLivingRoom & !presenceBedRoom & presenceKitchen)->next(notEmptyHouse & !presenceOnlyBathRoom & !presenceOnlyBedRoom & !presenceOnlyKitchen & !(presenceBedRoom&presenceKitchen&!presenceBathRoom&!presenceLivingRoom) & !(presenceBedRoom&!presenceKitchen&presenceBathRoom&!presenceLivingRoom));
+asm G(presenceBathRoom & presenceLivingRoom & presenceBedRoom & presenceKitchen)->next(notEmptyHouse & !presenceOnlyBathRoom & !presenceOnlyBedRoom & !presenceOnlyKitchen & !(presenceBedRoom&presenceKitchen&!presenceBathRoom&!presenceLivingRoom) & !(!presenceBedRoom&presenceKitchen&presenceBathRoom&!presenceLivingRoom) & !(presenceBedRoom&!presenceKitchen&presenceBathRoom&!presenceLivingRoom));
+ 
+gar G emptyHouse->lock;
+gar G !emptyHouse->!lock;
+//Lights and AC
+sys boolean lightBathRoom;
+sys boolean lightLivingRoom;
+sys boolean lightBedRoom;
+sys boolean lightKitchen;
+sys boolean acBathRoom;
+sys boolean acLivingRoom;
+sys boolean acBedRoom;
+sys boolean acKitchen;
+env boolean powerSavingMode;
+
+gar !lightBathRoom;
+gar !lightLivingRoom;
+gar !lightBedRoom;
+gar !lightKitchen;
+gar !acBathRoom;
+gar !acLivingRoom;
+gar !acBedRoom;
+gar !acKitchen;
+
+//Lights
+gar G(presenceBathRoom->lightBathRoom);
+gar G(presenceLivingRoom->lightLivingRoom);
+gar G(presenceBedRoom->lightBedRoom);
+gar G(presenceKitchen->lightKitchen);
+
+gar G(powerSavingMode&!presenceBathRoom->!lightBathRoom&!acBathRoom);
+gar G(powerSavingMode&!presenceLivingRoom->!lightLivingRoom&!acLivingRoom);
+gar G(powerSavingMode&!presenceBedRoom->!lightBedRoom&!acBedRoom);
+gar G(powerSavingMode&!presenceKitchen->!lightKitchen&!acKitchen);
+
+gar G(!fire&!powerSavingMode&!presenceBathRoom->lightBathRoom=PREV(lightBathRoom));
+gar G(!fire&!powerSavingMode&!presenceLivingRoom->lightLivingRoom=PREV(lightLivingRoom));
+gar G(!fire&!powerSavingMode&!presenceBedRoom->lightBedRoom=PREV(lightBedRoom));
+gar G(!fire&!powerSavingMode&!presenceKitchen->lightKitchen=PREV(lightKitchen));
+
+//A/C
+type temp = Int(0..30);
+env temp currTemp;
+
+gar G(presenceBathRoom&((currTemp<18) | (currTemp>26))->acBathRoom);
+gar G(presenceLivingRoom&((currTemp<18) | (currTemp>26))->acLivingRoom);
+gar G(presenceBedRoom&((currTemp<18) | (currTemp>26))->acBedRoom);
+gar G(presenceKitchen&((currTemp<18) | (currTemp>26))->acKitchen);
+
+gar G(powerSavingMode&presenceBathRoom&(currTemp>=18 & currTemp<=26)->!acBathRoom);
+gar G(powerSavingMode&presenceLivingRoom&(currTemp>=18 & currTemp<=26)->!acLivingRoom);
+gar G(powerSavingMode&presenceBedRoom&(currTemp>=18 & currTemp<=26)->!acBedRoom);
+gar G(powerSavingMode&presenceKitchen&(currTemp>=18 & currTemp<=26)->!acKitchen);
+
+gar G(!fire&!powerSavingMode&PREV(acLivingRoom)->acLivingRoom);
+gar G(!fire&!powerSavingMode&!presenceLivingRoom)->(acLivingRoom=PREV(acLivingRoom));
+gar G(!fire&!powerSavingMode&presenceLivingRoom&((currTemp>18)&(currTemp<26)))->(acLivingRoom=PREV(acLivingRoom));
+gar G(!fire&!powerSavingMode&PREV(acBedRoom)->acBedRoom);
+gar G(!fire&!powerSavingMode&!presenceBedRoom)->(acBedRoom=PREV(acBedRoom));
+gar G(!fire&!powerSavingMode&presenceBedRoom&((currTemp>18)&(currTemp<26)))->(acBedRoom=PREV(acBedRoom));
+gar G(!fire&!powerSavingMode&PREV(acBathRoom)->acBathRoom);
+gar G(!fire&!powerSavingMode&!presenceBathRoom)->(acBathRoom=PREV(acBathRoom));
+gar G(!fire&!powerSavingMode&presenceBathRoom&((currTemp>18)&(currTemp<26)))->(acBathRoom=PREV(acBathRoom));
+gar G(!fire&!powerSavingMode&PREV(acKitchen)->acKitchen);
+gar G(!fire&!powerSavingMode&!presenceKitchen)->(acKitchen=PREV(acKitchen));
+gar G(!fire&!powerSavingMode&presenceKitchen&((currTemp>18)&(currTemp<26)))->(acKitchen=PREV(acKitchen));
+
+//Robot
+sys {DOCK, LIVINGROOM, BATHROOM, BEDROOM, KITCHEN} robot;
+
+gar robot = DOCK;
+
+//Robot Moving 
+gar G(robot = BEDROOM) -> (next(robot) = DOCK | next(robot) = LIVINGROOM | next(robot) = BEDROOM);
+gar G(robot = BATHROOM) -> (next(robot) = DOCK | next(robot) = LIVINGROOM | next(robot) = BATHROOM);
+gar G(robot = KITCHEN) -> (next(robot) = DOCK | next(robot) = LIVINGROOM | next(robot) = KITCHEN);
+
+//Robot Mechanism
+gar GF robot = KITCHEN;
+gar GF robot = LIVINGROOM;
+gar GF robot = BEDROOM;
+gar GF robot = BATHROOM;
+
+gar G presenceKitchen -> robot != KITCHEN;
+gar G presenceLivingRoom -> robot != LIVINGROOM;
+gar G presenceBedRoom -> robot != BEDROOM;
+gar G presenceBathRoom -> robot != BATHROOM;
+gar G fullHouse -> (robot = DOCK);
+
+//Fire
+env boolean fire;
+sys boolean alarm;
+sys boolean sprinklers;
+asm !fire;
+
+counter fireCounter(0..3){
+    fireCounter=0;
+    inc: fire;
+    reset: !fire;
+    overflow: keep;
+    } 
+    
+asm G (fireCounter = 1 | fireCounter = 2) -> next(fire);
+asm G (fireCounter = 3) -> next(!fire);
+gar G fire -> (robot = DOCK);
+gar G (fire&emptyHouse)->electricityOff;
+asm G((fire&(presenceBathRoom | presenceBedRoom |presenceKitchen)) -> next(presenceOnlyLivingRoom));
+asm G((fire&presenceOnlyLivingRoom) -> next(emptyHouse));
+gar G fire -> alarm & sprinklers;
+gar G !fire -> !alarm;
+gar G !fire -> !sprinklers;
+
+define
+	electricityOff := !lightBathRoom & !lightLivingRoom & !lightBedRoom & !lightKitchen & !acBathRoom & !acLivingRoom & !acBedRoom & !acKitchen;
+
+//Plants Watering    
+sys {SUNDAY, MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY} day;
+sys boolean waterPlantA;
+sys boolean waterPlantB;
+env boolean waterSavingMode;
+
+//days logic
+gar day = SUNDAY;
+gar G((day=SUNDAY & dayTime=2) -> next(day)=MONDAY);
+gar G((day=MONDAY & dayTime=2) -> next(day)=TUESDAY);
+gar G((day=TUESDAY & dayTime=2) -> next(day)=WEDNESDAY);
+gar G((day=WEDNESDAY & dayTime=2) -> next(day)=THURSDAY);
+gar G((day=THURSDAY & dayTime=2) -> next(day)=FRIDAY);
+gar G((day=FRIDAY & dayTime=2) -> next(day)=SATURDAY);
+gar G((day=SATURDAY & dayTime=2) -> next(day)=SUNDAY);
+gar G((day=SUNDAY & !(dayTime=2)) -> next(day)=SUNDAY);
+gar G((day=MONDAY & !(dayTime=2)) -> next(day)=MONDAY);
+gar G((day=TUESDAY & !(dayTime=2)) -> next(day)=TUESDAY);
+gar G((day=WEDNESDAY & !(dayTime=2)) -> next(day)=WEDNESDAY);
+gar G((day=THURSDAY & !(dayTime=2)) -> next(day)=THURSDAY);
+gar G((day=FRIDAY & !(dayTime=2)) -> next(day)=FRIDAY);
+gar G((day=SATURDAY & !(dayTime=2)) -> next(day)=SATURDAY);
+//hours counter
+counter dayTime(0..2){
+	dayTime=0;
+	inc: dayTime != 2;
+	reset: dayTime = 2;
+	overflow: false;
+	}
+//Plant Watering - 
+//On Non Water Saving Mode - 1-21 times
+//Plant A 
+//On Water Saving Mode 1-2 times
+gar waterPlants1:
+	pBecomesTrue_betweenQandR(waterPlantA, day = SUNDAY ,day = SATURDAY);
+gar trig[true]*[waterSavingMode&waterPlantA] |=> [!waterPlantA]{8};
+
+//Plant B 
+//On Water Saving Mode 1-4 times
+gar waterPlants2:
+	pBecomesTrue_betweenQandR(waterPlantB, day = SUNDAY ,day = SATURDAY);
+gar trig[true]*[waterSavingMode&waterPlantB] |=> [!waterPlantB]{5};

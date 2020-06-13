@@ -1,0 +1,52 @@
+import "./DwyerPatterns.spectra"
+module ParkingLot
+
+//Environment controlled input variables (vehicles and pedestrians)
+env boolean carEnterance;
+env boolean carExit;
+//env boolean carVipEntrance;
+//env boolean carVipExit;
+//env boolean pedestrianRight;
+//env boolean pedestrianLeft;
+
+//System controlled output variables (gates and lights)
+sys boolean gateEnterance;
+sys boolean gateExit;
+sys boolean gateVipEnterance;
+sys boolean gateVipExit;
+sys boolean greenRight;
+sys boolean greenLeft;
+sys boolean [8]spotLight;
+
+
+// assumptions
+asm G carEnterance -> ((next(carEnterance) = carEnterance) | gateEnterance);
+
+// counts how many regular cars are currently in the parking lot
+counter spotsCounter(0..7) {
+	spotsCounter = 0;
+	inc: gateEnterance;
+	dec: gateExit;
+	overflow: false;
+}
+
+// counts how many VIP cars are currently in the parking lot
+counter vipSpotsCounter(0..3) {
+	vipSpotsCounter = 0;
+	inc: gateVipEnterance;
+	dec: gateVipExit;
+	overflow: false;
+}
+
+//new guarantee for not letting an ambulance wait
+//At the beginning the gates are closed.
+gar !gateExit;
+gar !gateEnterance;
+gar !gateVipExit;
+gar !gateVipEnterance;
+
+gar pRespondsToS(spotsCounter < 6 & carEnterance, gateEnterance);
+gar G gateEnterance -> ! next(gateEnterance);
+gar G gateExit -> ! next(gateExit);
+gar pRespondsToS(carExit, gateExit);
+

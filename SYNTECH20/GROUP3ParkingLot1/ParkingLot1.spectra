@@ -1,0 +1,303 @@
+import "./DwyerPatterns.spectra"
+module ParkingLot
+
+
+
+// **************************************************
+// *** define for parking spots arrays and loops  ***
+// **************************************************
+
+define
+	numOfSpots := 7;
+	numOfSpotsPlusOne := numOfSpots + 1;
+	numOfSpotsPlusTwo := numOfSpots + 2;
+
+
+
+// *****************************************************
+// *** define for parking lot maintenance activation ***
+// *****************************************************
+
+define killAll := 7;
+	
+
+	
+// **************************************************
+// ***  Environment variables - cars indicators   ***
+// **************************************************
+
+env boolean carEntrance; // car is waiting to enter the parking lot
+env boolean carExit; // car is waiting to exit the parking lot
+env boolean carVipEntrance; // VIP car is waiting to enter the parking lot
+env boolean carVipExit; // VIP car is waiting to exit the parking lot
+env boolean[numOfSpotsPlusOne] carInSpot; // environment send us indicators whether there is a car in spot i
+
+
+
+// ********************************************************
+// ***  Environment variables - pedestrian indicators   ***
+// ********************************************************
+
+env boolean pedestrianRight; // true if there is a pedestrian in the right cross-walk
+env boolean pedestrianLeft; // true if there is a pedestrian in the left cross-walk
+
+
+
+// **********************************************************************************
+// ***              Environment variables - maintenance indicator                 ***
+// ***  if indicator is true then we enable parking lot maintenance activation    ***
+// ***  otherwise, we disable parking lot maintenance                             ***
+// **********************************************************************************
+
+env boolean enableMain;
+
+
+
+// ************************************************
+// ***  System variables - gates' controllers   ***
+// ************************************************
+
+sys boolean gateEntrance; // controls regular entrance gate
+sys boolean gateExit; // controls regular exit gate
+sys boolean gateVipEntrance; // controls VIP entrance gate
+sys boolean gateVipExit; // controls VIP exit gate
+
+
+
+// *****************************************************
+// ***  System variables - maintenance indicators    ***
+// *****************************************************
+
+sys boolean[numOfSpotsPlusTwo] spotMaintenance; // controls spot maintenance
+sys boolean parkingLotMaintenance; // controls whole parking lot maintenance
+
+
+
+// *****************************************************
+// ***  System variables - maintenance indicators    ***
+// *****************************************************
+
+sys boolean [numOfSpotsPlusTwo]spotLight; // controls the spot lights in the parking lot
+sys Int(0..numOfSpotsPlusOne) freeSpot; // indicates a number of a free spot to park in
+sys boolean dummy; // if enableMain is false then we need this dummy
+
+
+
+// **********************************************************
+// ***  System variables - pedestrian cross-walk lights   ***
+// **********************************************************
+
+sys boolean pedetrianRightLight; // controls pedestrian right cross-walk lights
+sys boolean pedetrianLeftLight; // controls pedestrian left cross-walk lights
+
+
+
+// **************************************************
+// ***             Beginning Assumptions          ***
+// ***  At the beginning the parking lot is empty ***
+// **************************************************
+
+asm !carExit;
+asm !carEntrance;
+asm !carVipEntrance;
+asm !carVipExit;
+
+
+
+// **************************************************
+// ***             Beginning Guarantees           ***
+// ***    At the beginning the gates are closed   ***
+// **************************************************
+
+gar !gateExit;
+gar !gateEntrance;
+gar !gateVipExit;
+gar !gateVipEntrance;
+
+
+
+// **************************************************
+// ***             Permanent Variables            ***
+// **************************************************
+
+asm G enableMain -> next(enableMain);
+asm G !enableMain -> !next(enableMain);
+
+
+
+
+
+
+// ****************************************************************************************************
+// ***                    Assumptions and Guarantees regarding entering vehicles                    ***
+//
+// ***                 If a car wishes to enter the parking lot, whether it is VIP or not,          ***
+// ***         it will wait until the relevant gate opens which happens when there is space and     ***
+// ***                              no pedestrians in relevant cross-walk.                          ***
+//
+// ***   After the car enters the parking lot - we assume that there will be no car in next state   ***
+// ***           since we want and need to close the relevant gate after a car enters.              ***
+// ****************************************************************************************************
+
+asm G ((carEntrance & freeSpot != numOfSpotsPlusOne & !pedetrianRightLight & !gateVipEntrance)-> !(next(carEntrance)));
+gar G gateEntrance -> ! next(gateEntrance); 
+gar G gateExit -> ! next(gateExit); 
+gar G (carEntrance & freeSpot != numOfSpotsPlusOne & !gateVipEntrance & !pedetrianRightLight) -> gateEntrance; 
+
+asm G ((carVipEntrance & freeSpot != numOfSpotsPlusOne & !pedetrianLeftLight)-> !(next(carVipEntrance)));
+gar G gateVipEntrance -> ! next(gateVipEntrance); 
+gar G gateVipExit -> ! next(gateVipExit); 
+gar G (carVipEntrance & freeSpot != numOfSpotsPlusOne & !pedetrianLeftLight) -> gateVipEntrance; 
+
+
+
+// ****************************************************************************************************
+// ***                    Assumptions and Guarantees regarding exiting vehicles                     ***
+//
+// ***                 If a car wishes to exit the parking lot, whether it is VIP or not,           ***
+// ***         it will wait until the relevant gate opens which happens in the next state.          ***
+//
+// ***   After the car exits the parking lot - we assume that there will be no car in next state    ***
+// ***           since we want and need to close the relevant gate after a car exits.               ***
+// ****************************************************************************************************
+
+gar G carExit -> gateExit; 
+asm G carExit -> !(next(carExit));
+
+gar G carVipExit -> gateVipExit; 
+asm G carVipExit -> !(next(carVipExit));
+
+
+
+// ****************************************************************************************************
+// ***                      Assumptions and Guarantees regarding pedestrians                        ***
+//
+// ***           If a pedestrian wishes to cross the cross-walk, either the right or left one,      ***
+// ***               it will wait until he gets green light which will happen eventually.           ***
+//
+// ***   After the car exits the parking lot - we assume that there will be no car in next state    ***
+// ***           since we want and need to close the relevant gate after a car exits.               ***
+//
+//
+// ***           							NOTES:									                ***
+// ***      1) if there is a pedestrian crossing the cross-walk the relevant gate won't open        ***
+// ***              2) we prevented permanent pedestrian cross-walks green light                    ***
+// ****************************************************************************************************
+
+
+gar pRespondsToS(pedestrianRight, pedetrianRightLight);
+gar pRespondsToS(pedestrianLeft, pedetrianLeftLight);
+
+gar G pedetrianRightLight -> !gateEntrance;
+gar G pedetrianRightLight -> !gateVipExit;
+
+gar G pedetrianLeftLight -> !gateVipEntrance;
+gar G pedetrianLeftLight -> !gateExit;
+
+gar GF !pedetrianRightLight;
+gar GF !pedetrianLeftLight;
+
+
+
+// ****************************************************************************************************
+// ***                              Guarantees regarding gates                                      ***
+//
+// ***           1) When there is no car waiting to enter or exit the parking lot,                  ***
+// ***                              the gates should be closed.                                     ***
+// ***           2) If there is no space left in parking lot - the gates should be closed           ***
+// ****************************************************************************************************
+
+gar G (!carEntrance) -> (!gateEntrance);
+gar G (!carExit) -> (!gateExit);
+
+gar G (!carVipEntrance) -> (!gateVipEntrance);
+gar G (!carVipExit) -> (!gateVipExit);
+
+gar G freeSpot = numOfSpotsPlusOne -> !gateEntrance;
+gar G freeSpot = numOfSpotsPlusOne -> !gateVipEntrance;
+
+
+
+// ****************************************************************************************************
+// ***                       Guarantees regarding VIP over regular vehicles                         ***
+// ***       If a VIP entrance gate is open - the regular entrance gate should be closed            ***
+// ****************************************************************************************************
+
+gar G gateVipEntrance -> !gateEntrance;
+
+
+
+
+// ***************************************************************************************************
+// ***                            Guarantees regarding spot maintenance                            ***
+// ***                                                                                             ***
+// ***         1) If a car parks in a spot there will be no maintenance in the spot                ***
+// ***    2) If a car parks in a spot there will be no maintenance in the spot in the next state   ***
+// ***                  3) Only one spot can be under maintenance in a given state                 ***
+// ***************************************************************************************************
+
+gar G forall i in Int(0..numOfSpots).carInSpot[i] -> !spotMaintenance[i];
+gar G forall i in Int(0..numOfSpots).carInSpot[i] -> !next(spotMaintenance[i]);
+
+gar G forall k in Int(0..numOfSpots).spotMaintenance[k]-> (forall i in Int(0..numOfSpots). (!(i=k)) -> (!spotMaintenance[i]));
+
+
+
+// ********************************************************************************************
+// ***                            Finding empty spot in parking lot                         ***
+// ***                                                                                      ***
+// ***            Finding the minimum empty spot, which means it's spot light is off        ***
+// ***                        and it is not under spot maintenance                          ***
+// ********************************************************************************************
+
+gar G exists i in Int(0..numOfSpotsPlusOne).forall j in Int(0..numOfSpotsPlusOne).(j<i->(spotLight[j]=true | spotMaintenance[j] = true)) &spotMaintenance[i] = false & spotLight[i]=false & freeSpot=i;  
+
+
+
+// ********************************************************************************************
+// ***              Updating spot lights corresponding to cars in spot                      ***
+// ********************************************************************************************
+
+gar G forall i in Int(0..numOfSpots).(spotLight[i] <->carInSpot[i]);
+
+
+
+// **********************************************************************************************************
+// ***                   Assumptions and Guarantees regarding parking lot maintenance                     ***
+// ***                                                                                                    ***
+// ***          1) spotsCounter - counts how many vehicles entered the parking lot                        ***
+// ***                            when number of entered cars is bigger than "killAll"                    ***
+// ***                            spotsCounter will be reset and parking lot maintenance                  ***
+// ***                            will be activated.                                                      ***
+// *** 2) enableMain - the environment decides enabling or disabling the parking lot maintenance feature  ***
+// ***      3) a dummy is a variable we added in order to reset the counter when enableMain is false      ***
+// ***      4) after parking lot maintenance is activated we need to re-set system variables              ***
+// ***                             and assume environment assumptions are not violated.                   ***
+// **********************************************************************************************************
+
+counter spotsCounter(0..killAll) {
+	spotsCounter = 0;
+	inc: (!parkingLotMaintenance) & (gateEntrance | gateVipEntrance) & !dummy; 
+	reset: parkingLotMaintenance | dummy;
+	overflow: false;
+}
+
+gar G enableMain -> (spotsCounter < killAll -> !parkingLotMaintenance);
+gar G !enableMain -> !parkingLotMaintenance;
+
+gar G enableMain -> !dummy;
+gar G !enableMain -> dummy;
+
+asm G parkingLotMaintenance -> (forall k in Int(0..numOfSpots).(next(carInSpot[k] = false)));
+asm G parkingLotMaintenance -> next(!carVipExit);
+asm G parkingLotMaintenance -> next(!carExit);
+asm G parkingLotMaintenance -> next(!carVipEntrance);
+asm G parkingLotMaintenance -> next(!carEntrance);
+
+gar G parkingLotMaintenance -> (forall k in Int(0..numOfSpotsPlusOne).(next(spotLight[k] = false)));
+gar G parkingLotMaintenance -> (forall k in Int(0..numOfSpotsPlusOne).(next(spotMaintenance[k] = false)));
+gar G parkingLotMaintenance -> next(!gateEntrance);
+gar G parkingLotMaintenance -> next(!gateVipEntrance);
+gar G parkingLotMaintenance -> next(!gateExit);
+gar G parkingLotMaintenance -> next(!gateVipExit);
+gar G parkingLotMaintenance -> next(!parkingLotMaintenance);

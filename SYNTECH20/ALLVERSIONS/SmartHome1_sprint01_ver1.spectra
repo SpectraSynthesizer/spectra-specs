@@ -1,0 +1,108 @@
+import "DwyerPatterns.spectra"
+module SmartHome1_sprint01_ver1
+
+type Position = { OUT, WAIT_OUTSIDE, LIVING_ROOM, BATH_ROOM, PARANTS_ROOM, BABY_ROOM };
+
+predicate atHome(Position person):
+	 !(person=OUT | person=WAIT_OUTSIDE);
+	 
+predicate emptyRoom(Position room):
+	 father!=room & mother!=room & baby!=room;
+	 
+predicate goingOut(Position person):
+	 atHome(person) & next(!atHome(person));
+	 
+predicate goingIn(Position person):
+	 !atHome(person) & next(atHome(person));
+	 
+predicate fromRoomsToOtherPlace(Position person):
+	 ((person=BATH_ROOM | person=BABY_ROOM | person=PARANTS_ROOM) -> (next(person)=person | next(person)=LIVING_ROOM));
+	 
+	 
+// Environment controlled input variables (sensors)
+
+// Asm 1 - every member of the family can be only in one place each time. Empty house at the beginning;
+env Position father;
+env Position mother;
+env Position baby;
+asm father=OUT & mother=OUT & baby=OUT;
+
+//System controlled output variables (lights)
+
+sys boolean lightLivingRoom;
+sys boolean lightBabyRoom;
+sys boolean lightParantsRoom;
+
+// Asm 2 - each person will be inside the house and out of the house infinitely often
+asm GF atHome(father);
+asm GF !atHome(father);
+asm GF atHome(mother);
+asm GF !atHome(mother);		
+asm GF atHome(baby);
+asm GF !atHome(baby);
+
+// Asm 3 - each room will be  not empty infinitely often
+asm GF !emptyRoom(LIVING_ROOM);
+asm GF !emptyRoom(BABY_ROOM);
+asm GF !emptyRoom(PARANTS_ROOM);
+asm GF !emptyRoom(BATH_ROOM);
+
+
+// Asm 5 - the house will be empty infinitely often
+asm GF (emptyRoom(BABY_ROOM) & emptyRoom(PARANTS_ROOM) &emptyRoom(BATH_ROOM) &emptyRoom(LIVING_ROOM));
+
+
+// Asm 6 - baby can't move alone
+asm G((father!=baby & mother!=baby) -> next(baby)=baby);
+asm G((father=baby & mother=baby)-> (next(baby)=baby | next(baby)=next(father) | next(baby)=next(mother)));
+asm G((father=baby & mother!=baby)-> (next(baby)=baby | next(baby)=next(father)));
+asm G((mother=baby & father!=baby)-> (next(baby)=baby | next(baby)=next(mother)));
+
+//  Assumptions 7-9 - legal moves
+asm G (father=OUT -> (next(father=OUT) | next(father=WAIT_OUTSIDE)));
+asm G (mother=OUT -> (next(mother=OUT) | next(mother=WAIT_OUTSIDE)));
+asm G (baby=OUT -> (next(baby=OUT) | next(baby=WAIT_OUTSIDE)));
+asm G (father=WAIT_OUTSIDE ->( next(father)=WAIT_OUTSIDE |next(father = OUT) | next(father=LIVING_ROOM)));
+asm G (mother=WAIT_OUTSIDE ->( next(mother)=WAIT_OUTSIDE |next(mother = OUT) | next(mother=LIVING_ROOM)));
+asm G (baby=WAIT_OUTSIDE ->( next(baby)=WAIT_OUTSIDE|next(baby = OUT) | next(baby=LIVING_ROOM)));
+asm G fromRoomsToOtherPlace(father);
+asm G fromRoomsToOtherPlace(mother);
+asm G fromRoomsToOtherPlace(baby);
+
+
+
+//guarantees
+
+// Gar 1 - the door is not locked iff there is no thief and mother or father is at WAIT_OUTSIDE or LIVING_ROOM
+monitor boolean doorLocked{
+	doorLocked;
+	G (doorLocked = ( (!(father=WAIT_OUTSIDE | mother=WAIT_OUTSIDE | mother=LIVING_ROOM | father=LIVING_ROOM))));
+}
+
+// Gar 2 - if the room is empty the light in that room is OFF
+gar G(emptyRoom(LIVING_ROOM)->!lightLivingRoom);
+gar G(emptyRoom(BABY_ROOM)->!lightBabyRoom);
+gar G(emptyRoom(PARANTS_ROOM)->!lightParantsRoom);
+
+// Gar 3 - the light in bathroom is ON iff the bathroom is not empty
+monitor boolean lightBathRoom{
+	!lightBathRoom;
+	G( lightBathRoom = (mother=BATH_ROOM | father=BATH_ROOM | baby=BATH_ROOM));
+}
+
+
+// Gar 4-5 -if the baby is alone at the house or alone at WAIT_OUTSIDE or at BATH_ROOM there will be baby alarm
+monitor boolean babyAloneAlarm{
+	!babyAloneAlarm;
+	G (babyAloneAlarm = ((baby!= OUT & mother=OUT & father = OUT) | (baby=WAIT_OUTSIDE & father!=WAIT_OUTSIDE & mother!=WAIT_OUTSIDE) | 
+		(baby=BATH_ROOM & mother!=BATH_ROOM & father!=BATH_ROOM)));
+	
+	
+	
+}
+
+// Gar 6 - for every room infinitely often occur that there is a person in the room and there is a light in the room
+gar GF(!emptyRoom(LIVING_ROOM) & lightLivingRoom);
+gar GF(!emptyRoom(BABY_ROOM) & lightBabyRoom);
+gar GF(!emptyRoom(PARANTS_ROOM) & lightParantsRoom);
+	 

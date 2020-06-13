@@ -1,0 +1,186 @@
+import "DwyerPatterns.spectra"
+module SmartHome1_sprint01_ver1
+
+type Position = { OUT, WAIT_OUTSIDE, LIVING_ROOM, BATH_ROOM, PARANTS_ROOM, BABY_ROOM };
+
+predicate atHome(Position person):
+	 !(person=OUT | person=WAIT_OUTSIDE);
+	 
+predicate emptyRoom(Position room):
+	 father!=room & mother!=room & baby!=room;
+
+predicate stayInsideOrOutside(Position person):
+	 atHome(person) = next(atHome(person));
+	 
+predicate stayOutsideIfDoorLocked(Position person):
+	(doorLocked-> (person=WAIT_OUTSIDE -> (next(person)!=LIVING_ROOM)));
+	
+predicate stayInsideIfDoorLocked(Position person):
+	(doorLocked-> (person=LIVING_ROOM -> (next(person)!=WAIT_OUTSIDE )));
+
+	 
+predicate fromRoomsToOtherPlace(Position person):
+	 ((person=BATH_ROOM | person=BABY_ROOM | person=PARANTS_ROOM) -> (next(person)=person | next(person)=LIVING_ROOM));
+	 
+predicate legalMoveFromOut(Position person):
+	 (person=OUT -> (next(person=OUT) | next(person=WAIT_OUTSIDE)));
+	 
+predicate legalMoveFromWaitOutside(Position person):	 
+	 (person=WAIT_OUTSIDE ->( next(person)=WAIT_OUTSIDE |next(person = OUT) | next(person=LIVING_ROOM)));
+	
+predicate legalMoveFromLivingRoom(Position person):
+	(person=LIVING_ROOM -> (next(person)!=OUT));
+	 
+	 
+// Environment controlled input variables (sensors)
+
+// Asm 1 - every member of the family can be only in one place each time. Empty house at the beginning;
+env Position father;
+env Position mother;
+env Position baby;
+env Position thief;
+env boolean nightMode;
+
+asm nightMode = false;
+asm thief=OUT;
+asm father=PARANTS_ROOM;
+asm mother=PARANTS_ROOM;
+asm baby=BABY_ROOM;
+
+//System controlled output variables (lights)
+
+sys boolean lightLivingRoom;
+sys boolean lightBabyRoom;
+sys boolean lightParantsRoom;
+sys boolean lightBathRoom;
+sys boolean babyAloneAlarm;
+sys boolean doorLocked;
+sys boolean thiefAlarm;
+sys Position camera;
+
+
+// Asm 2 - can't go inside or outside when the door is locked
+asm G(stayInsideIfDoorLocked(thief) & stayOutsideIfDoorLocked(thief));
+asm G(stayInsideIfDoorLocked(mother) & stayOutsideIfDoorLocked(mother));
+asm G(stayInsideIfDoorLocked(father) & stayOutsideIfDoorLocked(father));
+asm G(stayInsideIfDoorLocked(baby) & stayOutsideIfDoorLocked(baby));
+
+// Asm 3 - baby can't move alone
+asm G((father!=baby & mother!=baby) -> next(baby)=baby);
+asm G((father=baby & mother=baby)-> (next(baby)=baby | next(baby)=next(father) | next(baby)=next(mother)));
+asm G((father=baby & mother!=baby)-> (next(baby)=baby | next(baby)=next(father)));
+asm G((mother=baby & father!=baby)-> (next(baby)=baby | next(baby)=next(mother)));
+
+//  Assumptions 4-6 - legal moves
+asm G legalMoveFromOut(father);
+asm G legalMoveFromOut(mother);
+asm G legalMoveFromOut(baby);
+asm G legalMoveFromOut(thief);
+asm G legalMoveFromWaitOutside(father);
+asm G legalMoveFromWaitOutside(mother);
+asm G legalMoveFromWaitOutside(baby);
+asm G legalMoveFromWaitOutside(thief);
+asm G fromRoomsToOtherPlace(father);
+asm G fromRoomsToOtherPlace(mother);
+asm G fromRoomsToOtherPlace(baby);
+asm G fromRoomsToOtherPlace(thief);
+asm G legalMoveFromLivingRoom(baby);
+asm G legalMoveFromLivingRoom(thief);
+asm G legalMoveFromLivingRoom(father);
+asm G legalMoveFromLivingRoom(mother);
+
+//Asm 7 - the thief will never stop trying
+asm GF thief!=OUT;
+
+//Asm 8 - the thief wont come if father or mother is outside or the camera is active outside
+asm alw (thief=WAIT_OUTSIDE -> (father!=WAIT_OUTSIDE & mother!=WAIT_OUTSIDE & camera!= WAIT_OUTSIDE));
+
+//Asm 9 - if there is an alarm, the thief will run away
+asm G(thiefAlarm -> next(thief=OUT));
+
+//Asm 10 - the babyAloneAlarm will be active infinitely often
+asm GF babyAloneAlarm;
+
+//Asm 11 - the father will be at any possible position infinitely often
+asm GF (father=OUT);
+asm GF (father=BATH_ROOM);
+asm GF (father=BABY_ROOM);
+asm GF (father=PARANTS_ROOM);
+asm GF (father=WAIT_OUTSIDE);
+ 
+//Asm 11 - the mother will be at any possible position infinitely often
+asm GF (mother=OUT);
+asm GF (mother=BATH_ROOM);
+asm GF (mother=BABY_ROOM);
+asm GF (mother=PARANTS_ROOM);
+asm GF (mother=WAIT_OUTSIDE);
+
+//Asm 11 - the baby will be at any possible position infinitely often
+asm GF (baby=OUT);
+asm GF (baby=BATH_ROOM);
+asm GF (baby=BABY_ROOM);
+asm GF (baby=PARANTS_ROOM);
+asm GF (baby=WAIT_OUTSIDE);
+
+//Asm 12 - the thiefAlarm will be active infinitely often
+asm GF thiefAlarm;
+
+//guarantees
+
+// Gar 1 - the door is not locked iff there is no thief and mother or father or camera is at WAIT_OUTSIDE or LIVING_ROOM
+
+gar	G (doorLocked = (thief=WAIT_OUTSIDE | (!( father=WAIT_OUTSIDE | mother=WAIT_OUTSIDE | mother=LIVING_ROOM | father=LIVING_ROOM))));
+
+
+// Gar 2 - if the room is empty the light in that room is OFF
+gar G(emptyRoom(LIVING_ROOM)->!lightLivingRoom);
+gar G(emptyRoom(BABY_ROOM)->!lightBabyRoom);
+gar G(emptyRoom(PARANTS_ROOM)->!lightParantsRoom);
+
+// Gar 3 - the light in bathroom is ON iff the bathroom is not empty
+
+gar	G( lightBathRoom = (mother=BATH_ROOM | father=BATH_ROOM | baby=BATH_ROOM));
+
+
+// Gar 4-5 -if the baby is alone at the house or alone at WAIT_OUTSIDE or at BATH_ROOM there will be baby alarm
+
+gar G (babyAloneAlarm = (((baby!= OUT & baby!=WAIT_OUTSIDE &( mother=OUT | mother=WAIT_OUTSIDE) & (father = OUT | father=WAIT_OUTSIDE)) |
+	 (baby=WAIT_OUTSIDE & father!=WAIT_OUTSIDE & mother!=WAIT_OUTSIDE) | 
+	(baby=BATH_ROOM & mother!=BATH_ROOM & father!=BATH_ROOM))));
+	
+
+// Gar 6 - the thief will never be able to enter to the house
+gar G(thief=OUT | thief=WAIT_OUTSIDE);
+
+// Gar7 - if the baby is alone, the camera will be active in the specific zone.
+gar G(babyAloneAlarm -> camera!=OUT);
+
+// Gar 8 - the camera will not be on, unless the baby is alone
+gar G(camera=baby | camera=OUT);
+gar G(camera!=OUT -> (baby!= OUT & baby!=WAIT_OUTSIDE &( mother=OUT | mother=WAIT_OUTSIDE) & (father = OUT | father=WAIT_OUTSIDE)) |
+	 (baby=WAIT_OUTSIDE & father!=WAIT_OUTSIDE & mother!=WAIT_OUTSIDE) | 
+	(baby=BATH_ROOM & mother!=BATH_ROOM & father!=BATH_ROOM));
+
+// Gar 9 - infinitely often if the living room is not empty then the lights in the living room will be on
+gar GF(!emptyRoom(LIVING_ROOM) -> lightLivingRoom);
+
+// Gar 10-11 - there is alarm iff there is a thief
+gar G (thiefAlarm = (thief!=OUT));
+
+// Gar 12 - infinitely often the lights in the baby room will be on
+gar GF(lightBabyRoom);
+
+// Gar 13 - infinitely often the lights in the parents room will be on
+gar GF(lightParantsRoom);
+
+
+gar G(nightMode -> (!lightBabyRoom  & !lightParantsRoom));
+
+
+gar G(nightMode -> (!lightBabyRoom  & !lightParantsRoom));
+
+asm GF nightMode;
+
+asm GF !nightMode;
+asm GF (!nightMode & !emptyRoom(PARANTS_ROOM));
+asm GF (!nightMode & !emptyRoom(BABY_ROOM));

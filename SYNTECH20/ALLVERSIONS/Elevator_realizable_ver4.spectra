@@ -1,0 +1,86 @@
+import "patterns/DwyerPatterns.spectra"
+module Elevator4
+
+define floorsNum := 3;
+
+type Floors = Int(0..(floorsNum-1));
+type DoorsMotorState = {OPENED, CLOSED};
+type DoorsMotorCmd = {OPEN, CLOSE, STOP};
+type LiftMotorCmd = {UP, DOWN, STOP};
+
+env boolean[floorsNum] elevatorRequests;
+env boolean[floorsNum] floorRequests;
+env boolean sabbathMode;
+env boolean emergencyMode;
+env DoorsMotorState doorsMotorState;
+env Floors pos;
+
+sys DoorsMotorCmd doorsMotorAction;
+sys LiftMotorCmd liftMotorAction;
+
+asm forall f in Floors. !elevatorRequests[f];
+asm forall f in Floors. !floorRequests[f];
+asm !sabbathMode;
+asm !emergencyMode;
+asm doorsMotorState = CLOSED;
+asm pos = 0;
+
+asm G (doorsMotorAction = OPEN -> next(doorsMotorState) = OPENED);
+asm G (doorsMotorAction = CLOSE -> next(doorsMotorState) = CLOSED);
+asm G (doorsMotorAction = STOP -> next(doorsMotorState) = doorsMotorState);
+
+asm moveStop:
+	G (liftMotorAction = STOP -> pos = next(pos));
+asm moveUp:
+	G (liftMotorAction = UP and pos != floorsNum-1 -> pos+1 = next(pos));
+asm moveDown:
+	G (liftMotorAction = DOWN and pos != 0 -> pos-1 = next(pos));
+
+gar ifMinFloorDontGoDown:
+	G (pos = 0 -> !(liftMotorAction = DOWN));
+
+gar ifMaxFloorDontGoUp:
+	G (pos = floorsNum-1 -> !(liftMotorAction = UP));
+
+gar ifDoorsClosedDontClose:
+	G (doorsMotorState = CLOSED -> !(doorsMotorAction = CLOSE));
+	
+gar ifDoorsOpenedDontOpen:
+	G (doorsMotorState = OPENED -> !(doorsMotorAction = OPEN));
+	
+gar dontChangeDirectionWithoutStopping:
+	G ((liftMotorAction=UP -> next(!(liftMotorAction=DOWN))) and (liftMotorAction = DOWN -> next(!(liftMotorAction = UP))));
+	
+gar dontMoveDoorsWhileMoving:
+	G (liftMotorAction != STOP -> doorsMotorAction = STOP);
+
+gar dontMoveWithOpenedDoors:
+	G (liftMotorAction != STOP -> doorsMotorState = CLOSED);
+	
+asm G forall f in Floors. ((pos = f and doorsMotorState = OPENED) -> (!elevatorRequests[f] and !floorRequests[f]));
+asm G forall f in Floors. ((pos != f or doorsMotorState != OPENED) -> ((elevatorRequests[f] -> next(elevatorRequests[f]) and (floorRequests[f] -> next(floorRequests[f])))));
+
+//////////////////////////////////////////////
+
+sys boolean[floorsNum] requested;
+sys {IDLE, MOVING, OPENCLOSE, SERVING} state;
+gar state = IDLE;
+gar G forall f in Floors. requested[f] iff (elevatorRequests[f] or floorRequests[f]);
+
+gar GF !requested[0];
+gar GF !requested[1];
+gar GF !requested[2];
+define request := requested[0] or requested[1] or requested[2];
+
+gar G request -> state != IDLE;
+
+
+
+//gar G exists f in Floors. ((liftMotorAction != DOWN) -> (f >= pos and requested[f]) or doorsMotorAction != STOP);
+gar trig [true]*[!requested[0] and !requested[1] and !requested[2]] |=> [true][liftMotorAction=DOWN | pos=0];
+//gar trig [true]*[doorsMotorAction=OPEN] |=> [doorsMotorAction=CLOSE][doorsMotorState=CLOSED]*[liftMotorAction!=STOP];
+
+
+
+	
+

@@ -1,0 +1,273 @@
+module SmartHome3_sprint03_ver1
+  
+  
+/* 
+ * Smart-Home has these controls:
+ * 	Time
+ * 	Movement control
+ *  Temperature control
+ *  Cleaning control
+ * 
+ * Each control may has:
+ * 	1 - environment variables
+ * 	2 - environment assumptions
+ * 	3 - system controlled variables
+ *  4 - predicates, counters and monitors
+ * 
+ * */ 
+
+//__________________ Time  __________________
+define
+saturday := day=7;
+timeunitsPerDay:=12;
+
+counter timeUnit(1..timeunitsPerDay) {
+timeUnit=1;
+inc: true;
+overflow: modulo;
+}
+
+counter day(1..7) {
+day=1;
+inc: timeUnit=timeunitsPerDay;
+overflow: modulo;
+}
+// Alarm clock
+env Int(1..7) alarmClockDay;
+env Int(1..timeunitsPerDay) alarmClockTimeunit;
+asm G !alarmClock -> ( next(alarmClockDay)=alarmClockDay & next(alarmClockTimeunit)=alarmClockTimeunit );
+sys boolean alarmClock;
+gar G alarmClock <-> (day=alarmClockDay & alarmClockTimeunit=timeUnit);
+
+
+//__________________ Movement control __________________
+
+//_____ environment variables _____
+// movement sensors
+env boolean livingRoomPresenceSensor;
+env boolean kitchenPresenceSensor;
+env boolean bathroomPresenceSensor;
+env boolean bedroomPresenceSensor;
+  
+  predicate houseIsEmpty():
+!livingRoomPresenceSensor& !kitchenPresenceSensor & !bathroomPresenceSensor & !bedroomPresenceSensor;
+
+// Bedroom light off switch
+env boolean bedroomLightOffSwitch;
+  
+//_____ environment assumptions _____
+// there will be movements in every one of the rooms
+asm GF livingRoomPresenceSensor;
+asm GF kitchenPresenceSensor;
+asm GF bathroomPresenceSensor;
+asm GF bedroomPresenceSensor;
+
+// movement in inner room, can only happen if there was a movement in the room or adjacent room with a door between them 
+asm G kitchenPresenceSensor -> ( next(kitchenPresenceSensor) | next(livingRoomPresenceSensor) ) ;
+asm G bedroomPresenceSensor -> (next(livingRoomPresenceSensor) | next(bathroomPresenceSensor) | next(bedroomPresenceSensor) ) ;
+asm G bathroomPresenceSensor -> (next(livingRoomPresenceSensor) | next(bathroomPresenceSensor) | next(bedroomPresenceSensor) ) ;
+
+ // entry only via living room
+asm G houseIsEmpty() -> next(houseIsEmpty() | livingRoomPresenceSensor);
+asm G livingRoomPresenceSensor -> ( next(houseIsEmpty()) | next(livingRoomPresenceSensor) | next(kitchenPresenceSensor) | next(bathroomPresenceSensor) | next(bedroomPresenceSensor));
+
+//bedroom manual light switch can only change when Kenny is inside the bedroom
+asm G (!bedroomPresenceSensor) -> (bedroomLightOffSwitch <-> next(bedroomLightOffSwitch));  // works great
+
+//_____ system controlled variables _____
+// lights
+sys boolean livingRoomLight;
+sys boolean kitchenLight;
+sys boolean bathroomLight;
+sys boolean bedroomLight;
+   
+// security
+sys boolean mainDoorIsLocked;
+
+// movements make the light turn on or off (Guarantee 1)
+gar G !saturday->(livingRoomPresenceSensor <-> livingRoomLight);
+gar G !saturday->(kitchenPresenceSensor    <-> kitchenLight   );
+gar G !saturday->(bathroomPresenceSensor   <-> bathroomLight  );
+
+// (Guarantee 2)
+gar G !saturday->(bedroomPresenceSensor&!bedroomLightOffSwitch <-> bedroomLight);
+
+// (Requirement 2)
+gar G saturday->(livingRoomLight&kitchenLight&bathroomLight&!bedroomLight);
+//-----
+
+//_____ Security _____  
+// (Guarantee 3) - The main door gets locked when the house is empty 
+gar G houseIsEmpty() -> mainDoorIsLocked;
+
+// (forget to lock the door before sleeping) - The main door gets locked when the bedroom is the only room that occupied and the light is off 
+gar G (bedroomLightOffSwitch & bedroomPresenceSensor) -> mainDoorIsLocked;
+
+//__________________ Temperature control __________________
+
+define
+unpleasantTemperatureStateBound:= 3;
+TemperatureMaxChange := 5;
+
+//_____ environment variables _____
+env Int (1..50) outsideTemperature;
+
+//outside temperature is gradual
+asm G (next(outsideTemperature)<outsideTemperature+TemperatureMaxChange)&(next(outsideTemperature)>outsideTemperature-TemperatureMaxChange);
+
+//_____ system controlled variables _____ 
+// AC
+sys boolean AC;
+  
+// The affect of the AC on the home temperature such that homeTemperature=outsideTemperature+acAffect-50
+sys Int(0..100) acAffect;
+sys Int(1..50) homeTemperature;
+
+
+//_____ predicates & counters _____
+predicate houseTemperatureIsPleasant():
+(homeTemperature > 18 & 26 > homeTemperature);
+  
+counter unpleasantTemperatureCounter(0..unpleasantTemperatureStateBound) {
+unpleasantTemperatureCounter=0;
+inc: !(houseTemperatureIsPleasant())&!(houseIsEmpty());
+reset: houseTemperatureIsPleasant();
+overflow: false;
+}
+
+gar G unpleasantTemperatureCounter<=unpleasantTemperatureStateBound;
+
+//acAffect is gradual
+gar G AC->(next(acAffect)<acAffect+TemperatureMaxChange)&(next(acAffect)>acAffect-TemperatureMaxChange);
+gar G !AC->next(acAffect)=0;
+
+gar G (homeTemperature=outsideTemperature+acAffect-50);//-50 because I couldn't create acAffect as an integer that gets negative values too
+  
+// active AC if house is not empty, and the house is too cold/hot
+gar G (!houseIsEmpty() & !(houseTemperatureIsPleasant()))-> AC; 
+
+//__________________ Cleaning control __________________
+//_____ environment variables _____
+env boolean livingRoomIsDirtySensor;
+env boolean kitchenIsDirtySensor;
+env boolean bathroomIsDirtySensor;
+env boolean bedroomIsDirtySensor;
+
+predicate houseIsDirty():
+livingRoomIsDirtySensor | kitchenIsDirtySensor | bathroomIsDirtySensor | bedroomIsDirtySensor;
+
+//_____ environment assumptions _____
+// the house is getting dirty
+asm GF livingRoomIsDirtySensor;
+asm GF kitchenIsDirtySensor;
+asm GF bathroomIsDirtySensor;
+asm GF bedroomIsDirtySensor;
+
+
+//Each room becomes clean only after the robot passes in it
+asm G livingRoomIsDirtySensor->(cleaningBotInLivingRoom & cleaningBotIsActive <-> !next(livingRoomIsDirtySensor));
+asm G kitchenIsDirtySensor->(cleaningBotInKitchen & cleaningBotIsActive <-> !next(kitchenIsDirtySensor));
+asm G bathroomIsDirtySensor->(cleaningBotInBathroom & cleaningBotIsActive <-> !next(bathroomIsDirtySensor));
+asm G bedroomIsDirtySensor->(cleaningBotInBedroom & cleaningBotIsActive <-> !next(bedroomIsDirtySensor));
+
+//_____ system controlled variables _____
+sys boolean cleaningBotIsActive;
+sys boolean cleaningBotInLivingRoom;
+sys boolean cleaningBotInKitchen;
+sys boolean cleaningBotInBathroom;
+sys boolean cleaningBotInBedroom;
+
+// movement in any room, can only happen if there was a movement in the room or adjacent room
+gar G cleaningBotInKitchen -> ( next(cleaningBotInKitchen) | next(cleaningBotInLivingRoom) ) ;
+gar G cleaningBotInBedroom -> (next(cleaningBotInLivingRoom) | next(cleaningBotInBathroom) | next(cleaningBotInBedroom) ) ;
+gar G cleaningBotInBathroom -> (next(cleaningBotInLivingRoom) | next(cleaningBotInBathroom) | next(cleaningBotInBedroom) ) ;
+gar G cleaningBotInLivingRoom -> ( next(cleaningBotInLivingRoom) | next(cleaningBotInKitchen) | next(cleaningBotInBathroom)| next(cleaningBotInBedroom) ) ;
+
+
+predicate cleaningBotIsPresent():
+cleaningBotInLivingRoom | cleaningBotInKitchen | cleaningBotInBathroom | cleaningBotInBedroom;
+
+// at any time point, cleaning robot is exactly in 1 room 
+predicate cleaningBotInOneRoom():
+!(cleaningBotInLivingRoom & cleaningBotInKitchen)  &
+!(cleaningBotInLivingRoom & cleaningBotInBathroom) &
+!(cleaningBotInLivingRoom & cleaningBotInBedroom)  &
+!(cleaningBotInKitchen    & cleaningBotInBathroom) &
+!(cleaningBotInKitchen    & cleaningBotInBedroom)  &
+!(cleaningBotInBathroom   & cleaningBotInBedroom) &
+cleaningBotIsPresent() ;
+  
+ // by default, the cleaning robot is 'off' and park in the living room 
+gar G !houseIsDirty() -> ((!cleaningBotIsActive)& cleaningBotInLivingRoom);
+
+// The robot turned on when the house is dirty
+gar G houseIsDirty() -> cleaningBotIsActive;
+
+// when the a room is dirty - eventually clean it gets cleaned
+gar trig [true]*[livingRoomIsDirtySensor] |=>[true]*[!livingRoomIsDirtySensor];
+gar trig [true]*[kitchenIsDirtySensor] |=>[true]*[!kitchenIsDirtySensor];
+gar trig [true]*[bathroomIsDirtySensor] |=>[true]*[!bathroomIsDirtySensor];
+gar trig [true]*[bedroomIsDirtySensor] |=>[true]*[!bedroomIsDirtySensor];
+
+// at any time point, cleaning robot is exactly in 1 room 
+gar G cleaningBotInOneRoom();
+
+//__________________ Plants  __________________
+sys boolean waterThePlants;
+//plants are being watered in the middle of each day
+gar G waterThePlants <-> timeUnit=6;
+
+
+//__________________ Refrigerator  __________________
+define
+wantedAmountMilk:=3;
+wantedAmountBread:=5;
+wantedAmountEggs:=2;
+ 
+env boolean residentTakeMilk;
+env boolean residentTakeBread;
+env boolean residentTakeEggs;
+
+sys boolean shippingForGorceries;
+gar G shippingForGorceries <-> (day=3&timeUnit=3);
+ 
+sys Int(0..5) AmountMilk;
+sys Int(0..5) AmountBread;
+sys Int(0..5) AmountEggs;
+
+asm (residentTakeMilk|residentTakeBread|residentTakeEggs) -> kitchenPresenceSensor;
+
+gar AmountMilk=wantedAmountMilk;
+gar G (residentTakeMilk & AmountMilk > 0 & !shippingForGorceries)->(next(AmountMilk)=AmountMilk-1);
+gar G (residentTakeMilk & AmountMilk = 0 & !shippingForGorceries)->(next(AmountMilk)=AmountMilk);
+gar G (!residentTakeMilk & !shippingForGorceries)->(next(AmountMilk)=AmountMilk);
+gar G shippingForGorceries-> next(AmountMilk)=wantedAmountMilk;
+
+gar AmountBread=wantedAmountBread;
+gar G (residentTakeBread&AmountBread>0&!shippingForGorceries)->(next(AmountBread)=AmountBread-1);
+gar G (residentTakeBread&AmountBread=0&!shippingForGorceries)->(next(AmountBread)=AmountBread);
+gar G (!residentTakeBread&!shippingForGorceries)->(next(AmountBread)=AmountBread);
+gar G shippingForGorceries-> next(AmountBread)=wantedAmountBread;
+
+gar AmountEggs=wantedAmountEggs;
+gar G (residentTakeEggs&AmountEggs>0&!shippingForGorceries)->(next(AmountEggs)=AmountEggs-1);
+gar G (residentTakeEggs&AmountEggs=0&!shippingForGorceries)->(next(AmountEggs)=AmountEggs);
+gar G (!residentTakeEggs&!shippingForGorceries)->(next(AmountEggs)=AmountEggs);
+gar G shippingForGorceries-> next(AmountEggs)=wantedAmountEggs;
+
+//__________________ Echo house __________________
+
+// Blinds are going down in the middle of the day
+sys boolean blindIsOn;
+gar G !saturday->(blindIsOn <-> (6<=timeUnit&timeUnit<=9));
+
+// solarPanel
+sys Int(1..100) solarPanelProfit;
+gar G solarPanelProfit = (outsideTemperature)*2;
+
+// Boiler
+env Int (1..timeunitsPerDay) shower_hour;
+sys boolean Boiler_active;
+gar G !saturday->((timeUnit = shower_hour) & (outsideTemperature < 25) <-> Boiler_active);
+
+

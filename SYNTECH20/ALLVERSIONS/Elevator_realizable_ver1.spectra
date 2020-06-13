@@ -1,0 +1,128 @@
+import "patterns/DwyerPatterns.spectra"
+
+module Elevator2
+
+
+// Constants
+define maxElevators := 3;
+define maxFloors := 5;
+
+// Type definitions
+type Elevators = Int(0..(maxElevators-1));
+type Floors = Int(0..(maxFloors-1));
+type DoorsMotorState = {OPENED, CLOSED};
+type DoorsMotorCmd = {OPEN, CLOSE, STOP};
+type LiftMotorCmd = {UP, DOWN, STOP};
+
+// For each floor, a request for both up and down (calling for an elevator)
+env boolean[maxFloors] elevatorRequests;
+// For each elevator, requests for specific floors (choosing floors after entering the elevator)
+env boolean[maxElevators][maxFloors] floorRequests;
+env boolean[maxElevators] sabbathMode;
+env boolean[maxElevators] emergencyMode;
+env DoorsMotorState[maxElevators] doorsMotorState;
+env Floors[maxElevators] pos;
+
+// System variables
+sys DoorsMotorCmd[maxElevators] doorsMotorAction;
+sys LiftMotorCmd[maxElevators] liftMotorAction;
+
+
+// everythingStartsAtZeroOrFalse:
+asm forall f in Floors. !elevatorRequests[f];
+asm forall e in Elevators. forall f in Floors. !floorRequests[e][f];
+asm forall e in Elevators. !sabbathMode[e];
+asm forall e in Elevators. !emergencyMode[e];
+asm forall e in Elevators. doorsMotorState[e] = CLOSED;
+asm forall e in Elevators. pos[e] = 0;
+
+asm doorsStop:
+	G forall e in Elevators. (doorsMotorAction[e] = STOP -> doorsMotorState[e] = next(doorsMotorState[e]));
+asm doorsOpen:
+	G forall e in Elevators. (doorsMotorAction[e] = OPEN -> next(doorsMotorState[e]) = OPENED);
+asm doorsClose:
+	G forall e in Elevators. (doorsMotorAction[e] = CLOSE -> next(doorsMotorState[e]) = CLOSED);
+
+asm moveStop:
+	G forall e in Elevators. (liftMotorAction[e] = STOP -> pos[e] = next(pos[e]));
+asm moveUp:
+	G forall e in Elevators. (liftMotorAction[e] = UP and pos[e] != maxFloors-1 -> pos[e]+1 = next(pos[e]));
+asm moveDown:
+	G forall e in Elevators. (liftMotorAction[e] = DOWN and pos[e] != 0 -> pos[e]-1 = next(pos[e]));
+
+asm disableElevatorRequest:
+	G (forall e in Elevators. (forall f in Floors. ((pos[e] = f and doorsMotorState[e] = OPENED) -> (next(elevatorRequests[f]) = false))));
+
+asm disableFloorRequest:
+	G (forall e in Elevators. (forall f in Floors. (pos[e] = f and doorsMotorState[e] = OPENED) -> (next(floorRequests[e][f]) = false)));
+
+gar ifMinFloorDontGoDown:
+	G (forall e in Elevators. (pos[e] = 0 -> !(liftMotorAction[e] = DOWN)));
+
+gar ifMaxFloorDontGoUp:
+	G (forall e in Elevators. (pos[e] = maxFloors-1 -> !(liftMotorAction[e] = UP)));
+
+gar ifDoorsClosedDontClose:
+	G (forall e in Elevators. (doorsMotorState[e] = CLOSED -> !(doorsMotorAction[e] = CLOSE)));
+	
+gar ifDoorsOpenedDontOpen:
+	G (forall e in Elevators. (doorsMotorState[e] = OPENED -> !(doorsMotorAction[e] = OPEN)));
+
+gar dontChangeDirectionWithoutStopping:
+	G (forall e in Elevators. ((liftMotorAction[e]=UP -> next(!(liftMotorAction[e]=DOWN))) and (liftMotorAction[e] = DOWN -> next(!(liftMotorAction[e] = UP)))));
+	
+gar dontMoveDoorsWhileMoving:
+	G forall e in Elevators. (liftMotorAction[e] != STOP -> doorsMotorAction[e] = STOP);
+
+gar dontMoveWithOpenedDoors:
+	G forall e in Elevators. (liftMotorAction[e] != STOP -> doorsMotorState[e] = CLOSED);
+
+// 	finallyServeRequests:
+gar GF elevatorRequests[0] = false;
+gar GF elevatorRequests[1] = false;
+gar GF (elevatorRequests[2] = false);
+gar GF (elevatorRequests[3] = false);
+gar GF (elevatorRequests[4] = false);
+gar GF (floorRequests[0][0] = false);
+gar GF (floorRequests[0][1] = false);
+gar GF (floorRequests[0][2] = false);
+gar GF (floorRequests[0][3] = false);
+gar GF (floorRequests[0][4] = false);
+gar GF (floorRequests[1][1] = false);
+gar GF (floorRequests[1][0] = false);
+gar GF (floorRequests[1][2] = false);
+gar GF (floorRequests[1][3] = false);
+gar GF (floorRequests[1][4] = false);
+gar GF (floorRequests[2][0] = false);
+gar GF (floorRequests[2][1] = false);
+gar GF (floorRequests[2][2] = false);
+gar GF (floorRequests[2][3] = false);
+gar GF (floorRequests[2][4] = false);
+
+//dontOpenDoorsMoreThanOnce:
+gar trig [true]*[doorsMotorAction[0]=OPEN] |=> [doorsMotorAction[0]=CLOSE][doorsMotorState[0]=CLOSED]*[liftMotorAction[0]!=STOP];
+gar trig [true]*[doorsMotorAction[1]=OPEN] |=> [doorsMotorAction[1]=CLOSE][doorsMotorState[1]=CLOSED]*[liftMotorAction[1]!=STOP];
+gar trig [true]*[doorsMotorAction[2]=OPEN] |=> [doorsMotorAction[2]=CLOSE][doorsMotorState[2]=CLOSED]*[liftMotorAction[2]!=STOP];
+
+
+//dontMoveDoorsWithoutReason
+gar G (pos[0] = 0 and (!elevatorRequests[0] and !floorRequests[0][0])) -> next(doorsMotorAction[0] = STOP);
+gar G (pos[0] = 1 and (!elevatorRequests[1] and !floorRequests[0][1])) -> next(doorsMotorAction[0] = STOP);
+gar G (pos[0] = 2 and (!elevatorRequests[2] and !floorRequests[0][2])) -> next(doorsMotorAction[0] = STOP);
+gar G (pos[0] = 3 and (!elevatorRequests[3] and !floorRequests[0][3])) -> next(doorsMotorAction[0] = STOP);
+gar G (pos[0] = 4 and (!elevatorRequests[4] and !floorRequests[0][4])) -> next(doorsMotorAction[0] = STOP);
+                                                                     
+gar G (pos[1] = 0 and (!elevatorRequests[0] and !floorRequests[1][0])) -> next(doorsMotorAction[1] = STOP);
+gar G (pos[1] = 1 and (!elevatorRequests[1] and !floorRequests[1][1])) -> next(doorsMotorAction[1] = STOP);
+gar G (pos[1] = 2 and (!elevatorRequests[2] and !floorRequests[1][2])) -> next(doorsMotorAction[1] = STOP);
+gar G (pos[1] = 3 and (!elevatorRequests[3] and !floorRequests[1][3])) -> next(doorsMotorAction[1] = STOP);
+gar G (pos[1] = 4 and (!elevatorRequests[4] and !floorRequests[1][4])) -> next(doorsMotorAction[1] = STOP);
+                                                                     
+gar G (pos[2] = 0 and (!elevatorRequests[0] and !floorRequests[2][0])) -> next(doorsMotorAction[2] = STOP);
+gar G (pos[2] = 1 and (!elevatorRequests[1] and !floorRequests[2][1])) -> next(doorsMotorAction[2] = STOP);
+gar G (pos[2] = 2 and (!elevatorRequests[2] and !floorRequests[2][2])) -> next(doorsMotorAction[2] = STOP);
+gar G (pos[2] = 3 and (!elevatorRequests[3] and !floorRequests[2][3])) -> next(doorsMotorAction[2] = STOP);
+gar G (pos[2] = 4 and (!elevatorRequests[4] and !floorRequests[2][4])) -> next(doorsMotorAction[2] = STOP);
+
+
+

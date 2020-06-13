@@ -1,0 +1,64 @@
+module AutonomousVehicle
+
+// *********************************
+// ********** Definitions **********
+// *********************************
+define 
+	drive := speed > 0;
+	driveFast := speed >= 5;	
+	
+// *********************************
+// ***** Environment Variables *****
+// *********************************
+env boolean pedestrianFirstLane;
+env boolean pedestrianSecondLane;
+env boolean pedestrianThirdLane;
+
+env boolean crosswalkFirstLane;
+env boolean crosswalkSecondLane;
+env boolean crosswalkThirdLane;
+
+env boolean greenLightFirstLane;
+env boolean greenLightSecondLane;
+env boolean greenLightThirdLane;
+
+env boolean obstacleFirstLane;
+env boolean obstacleSecondLane;
+env boolean obstacleThirdLane;
+
+// *********************************
+// ******* System Variables ********
+// *********************************
+type Lane = {First, Second, Third};
+sys Lane currentLane;
+sys Int(0..10) speed;
+
+// *********************************
+// ********** Assumptions **********
+// *********************************
+predicate carCanDrive(boolean greenLight, boolean pedestrian, boolean obstacle):
+	greenLight & !pedestrian & !obstacle;
+
+asm GF carCanDrive(greenLightFirstLane, pedestrianFirstLane, obstacleFirstLane);
+asm GF carCanDrive(greenLightSecondLane, pedestrianSecondLane, obstacleSecondLane);
+asm GF carCanDrive(greenLightThirdLane, pedestrianThirdLane, obstacleThirdLane);
+
+// *********************************
+// ********* Guarantees ************
+// *********************************
+
+// The car should avoid driving in a lane if there is a pedestrian, obstacle or a red light
+gar G carCanDrive(greenLightFirstLane, pedestrianFirstLane, obstacleFirstLane) | !(currentLane = First) | !drive;
+gar G carCanDrive(greenLightSecondLane, pedestrianSecondLane, obstacleSecondLane) | !(currentLane = Second) | !drive;
+gar G carCanDrive(greenLightThirdLane, pedestrianThirdLane, obstacleThirdLane) | !(currentLane = Third) | !drive;
+
+// The car should avoid driving in high speed if there is a crosswalk in the current lane
+gar G !(currentLane = First & crosswalkFirstLane & driveFast);
+gar G !(currentLane = Second & crosswalkSecondLane & driveFast);
+gar G !(currentLane = Third & crosswalkThirdLane & driveFast);
+
+// The car should drive infinitely often
+gar carCanDriveInCurrentLane:
+	GF (currentLane = First & carCanDrive(greenLightFirstLane, pedestrianFirstLane, obstacleFirstLane)) |
+	   (currentLane = Second & carCanDrive(greenLightSecondLane, pedestrianSecondLane, obstacleSecondLane)) |
+	   (currentLane = Third & carCanDrive(greenLightThirdLane, pedestrianThirdLane, obstacleThirdLane));

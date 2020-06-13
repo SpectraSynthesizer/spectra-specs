@@ -1,0 +1,88 @@
+spec ParkingLot2
+define NUMBEROFSPOTS := 5;
+
+//-----------Environment variables
+
+// there can only be one car at the lot entrance - #2
+env boolean carInEntrance;
+env boolean [NUMBEROFSPOTS] carWantsToLeave;
+env {STANDARD, HANDICAP} carType;
+env boolean securityCheck;
+
+//-----------System variables
+
+sys boolean [NUMBEROFSPOTS] spotIsTaken; // spotIsTaken[0] and spotIsTaken[1] are handicap spots
+sys boolean gateIsOpen;
+sys boolean resetHours;
+sys {OPEN, CLOSED} mode;
+
+//-----------Assumptions
+
+// a car (standard or handicap) will eventually arrive at the parking lot - #6
+asm GF carInEntrance;
+
+// a security guard will eventually stop a car for a security check - # 17
+asm GF carInEntrance & securityCheck;
+
+// a parked car will eventually leave the parking lot - #7    // repetitions due to spectra's limitations
+asm GF carWantsToLeave[0];
+asm GF carWantsToLeave[1];
+asm GF carWantsToLeave[2];
+asm GF carWantsToLeave[3];
+asm GF carWantsToLeave[4];
+//asm GF carWantsToLeave[5];
+//asm GF carWantsToLeave[6];
+//asm GF carWantsToLeave[7];
+//asm GF carWantsToLeave[8];
+//asm GF carWantsToLeave[9];
+
+// A car at lot entrance stays there until entering the lot - #4
+asm carDoesntDisappear:
+    G carInEntrance & !gateIsOpen -> next(carInEntrance);
+
+// A car doesn't change its type - #14
+asm carTypeDoesntChange:
+    G carInEntrance & !gateIsOpen -> next(carType) = carType;
+
+// a security check stalls the selected car for 1 round, before opening the lots gate - #18
+
+asm G (carInEntrance & securityCheck)-> next(!securityCheck);
+
+
+//-----------Guarantees
+
+gar initiallySpotsNonTaken:
+    forall i in Int(0..(NUMBEROFSPOTS-1)). (spotIsTaken[i] = false);
+
+// A car can only park in an empty spot - #3, #9
+gar G gateIsOpen <-> ((!securityCheck) & (((mode = OPEN) & carInEntrance & (carType = STANDARD) & (exists i in Int(2..(NUMBEROFSPOTS-1)). spotIsTaken[i] = false)) | ((mode = OPEN) & carInEntrance & (carType = HANDICAP) & (exists i in Int(0..(NUMBEROFSPOTS-1)). spotIsTaken[i] = false))));
+
+// a parking spot with a car is considered taken, otherwise non taken - #5, #8, #10
+// standard cars can only park is standard spots, and handicap cars can park in any spot - #15, #16
+
+gar G next(spotIsTaken[0]) = ((gateIsOpen & (carType = HANDICAP) & !spotIsTaken[0]) | (spotIsTaken[0] & !carWantsToLeave[0]));
+gar G next(spotIsTaken[1]) = ((gateIsOpen & (carType = HANDICAP) & spotIsTaken[0] & !spotIsTaken[1]) | (spotIsTaken[1] & !carWantsToLeave[1]));
+
+define HANDICAP_TAKEN := (carType = HANDICAP & spotIsTaken[0] & spotIsTaken[1]);
+define STANDARD_OR_TAKEN := (carType = STANDARD | HANDICAP_TAKEN);
+
+predicate allTakenUntilThisSpot(Int(2..(NUMBEROFSPOTS-1)) spot):
+	(forall i in Int(2..(NUMBEROFSPOTS-1)) . ((i = spot) -> !spotIsTaken[i]) & ((i < spot) -> spotIsTaken[i]));
+
+gar G forall i in Int(2..(NUMBEROFSPOTS-1)) . next(spotIsTaken[i]) = ((gateIsOpen & allTakenUntilThisSpot(i) & STANDARD_OR_TAKEN) | (spotIsTaken[i] & !carWantsToLeave[i]));
+
+// a counter to calculate the operating hours of the parking lot
+counter hours(0..11){
+    hours = 0;
+    inc: !resetHours;
+    reset: resetHours;
+    overflow: false;
+}
+
+gar G resetHours = (hours = 11);
+
+// the parking lot is open during hours 0-7. this means the cars will always be open eventually - #11, #13
+gar G (hours < 8) -> (mode = OPEN);
+
+// the parking lot is open during hours 8-12 - #12
+gar G (hours >= 8) -> (mode = CLOSED);

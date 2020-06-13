@@ -1,0 +1,23 @@
+module AutonomousVehicle
+
+// Define speed control actions
+define 
+	drive := speed > 0;
+	slow := speed < 5;
+	
+// Environment variables
+env boolean pedestrian;
+env boolean crosswalk;
+env boolean greenLight;
+
+// System variables
+sys Int(0..10) speed;
+
+// Assumptions
+asm GF greenLight & !pedestrian;
+
+// Guarantees
+gar G (pedestrian | !greenLight) -> !drive;
+gar G crosswalk -> slow;
+
+gar GF greenLight & !pedestrian & drive;

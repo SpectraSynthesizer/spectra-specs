@@ -1,0 +1,162 @@
+import "./patterns/DwyerPatterns.spectra"
+
+module AirPortModel
+
+
+// *********************************************
+// *** define type of all possible planes  ***
+// *********************************************
+
+type Vehicle = {NONE, SMALLPLANE, BIGPLANE};
+
+
+ /*
+ * variables of the environment
+ */
+
+/*
+ * 1 iff the wind is blowing east
+ */
+env boolean isWindEast;
+
+/*
+ * 1 iff the wind is strong
+ */
+env boolean isWindStrong;
+
+/*
+ * 1 if there is fog in the CTR, else 0
+ */
+env boolean isFoggy; 
+/*
+ * Are there birds in the southern part of the airport?
+ */
+env boolean birdsRadarSouth;
+/*
+ * Are there birds in the northern part of the airport?
+ */
+env boolean birdsRadarNorth; 
+/*
+ * 1 iff time is between 1 to 5
+ */
+env boolean oneToFive;
+/**
+ * 1 iff a plane is requesting to land
+ */
+env boolean landRequest; 
+/*
+ * 1 iff a plane is requesting to depart 
+ */
+env boolean departRequest; 
+
+
+/* @===================@
+ * |  SYSTEM VARIABLES |
+ * @===================@ */
+
+/*
+ * 1 iff landing in 025 is allowed
+ */
+sys boolean allowLand025;
+/*
+ * 1 iff landing in 076 is allowed
+ */
+sys boolean allowLand076; // the 076 lane is use now for landing
+/*
+ * 1 iff landing in 205 is allowed
+ */
+sys boolean allowLand205; 
+/*
+ * 1 iff landing in 256 is allowed
+ */
+sys boolean allowLand256;
+
+
+sys boolean allowTakeOff025; // the 025 lane is use now for takeoff
+sys boolean allowTakeOff076; // the 076 lane is use now for takeoff
+sys boolean allowTakeOff205; // the 205 lane is use now for takeoff
+sys boolean allowTakeOff256; // the 256 lane is use now for takeoff
+
+/*decide where a plan how land will park 1 iff main*/
+sys boolean parkInMain; 
+sys boolean green025;
+
+
+sys boolean setDepartParkingLotForPassengers; // decides where to send the people who wants to takeoff, main(1), secondary(0)
+sys boolean passengersWaiting_secondary; // points that passenger are waiting to a depart from the secondary parking
+env boolean passengersWaiting_main; //// points that passenger are waiting to a depart from the main parking
+sys boolean busLocation; //the bus is at main_parking(1) or secondary parking(0)
+
+sys boolean takeOffMain;
+sys boolean planeLanded;
+
+asm GF landRequest;
+asm GF departRequest;
+
+asm GF allowLand205;
+asm GF allowLand076;
+asm GF allowLand256;
+asm GF allowLand025;
+
+asm GF allowTakeOff205;
+asm GF allowTakeOff076;
+asm GF allowTakeOff025;
+asm GF allowTakeOff256;
+
+asm G  (!allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 & !allowLand256) | (allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 & !allowLand256) | (!allowTakeOff025 & allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 & !allowLand256) | (!allowTakeOff025 & !allowTakeOff076 & allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 & !allowLand256) | (!allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 & !allowLand256) | (!allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & allowLand025 & !allowLand076 & !allowLand205 & !allowLand256) | (!allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 & allowLand076 & !allowLand205 & !allowLand256) | (!allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 & allowLand205 & !allowLand256) | (!allowTakeOff025&!allowTakeOff076&!allowTakeOff205&!allowTakeOff256&!allowLand025&!allowLand076&!allowLand205&allowLand256) | (allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 & !allowLand256 ) | (!allowTakeOff025 & allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 & !allowLand256 ) | (!allowTakeOff025 & !allowTakeOff076 & allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 & !allowLand256 ) | (!allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 & !allowLand256 ) | (!allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & allowLand025 & !allowLand076 & !allowLand205 & !allowLand256 ) | (!allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 & allowLand076 & !allowLand205 & !allowLand256 ) | (!allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 & allowLand205 & !allowLand256 ) | (!allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 & allowLand256 ) | (allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 & !allowLand256 ) | (!allowTakeOff025 & allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 & !allowLand256 ) | (!allowTakeOff025 & !allowTakeOff076 & allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 & !allowLand256 ) | (!allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 & !allowLand256 ) | (!allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & allowLand025 & !allowLand076 & !allowLand205 & !allowLand256 ) | (!allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 & allowLand076 & !allowLand205 & !allowLand256 ) | (!allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 & allowLand205 & !allowLand256 ) | (!allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 & allowLand256 );
+
+asm GF passengersWaiting_main;
+//asm G (allowLand205 | allowLand076 | allowLand256 | allowLand025) -> 
+
+gar planeLanded <-> (allowLand205 | allowLand076 | allowLand256 | allowLand025) & landRequest;
+
+counter numberOfPlanesInMain(0..5){
+	inc: planeLanded & parkInMain;
+	dec: takeOffMain;
+	reset: false;
+	overflow: false;
+}
+
+gar G (allowLand025 | allowLand205 | allowTakeOff205 | allowTakeOff025) -> !green025;
+
+gar G (departRequest & numberOfPlanesInMain > 0) <-> takeOffMain; 
+
+gar G numberOfPlanesInMain < 5;
+
+gar G (planeLanded & !parkInMain) -> passengersWaiting_secondary;
+
+gar G  pRespondsToS(passengersWaiting_main, busLocation);
+
+gar G pRespondsToS(passengersWaiting_secondary, !busLocation);
+
+gar G (passengersWaiting_main & !takeOffMain & !(busLocation & green025)) -> passengersWaiting_main;
+
+gar G (busLocation & green025) -> next(!busLocation);
+
+gar G isFoggy -> !(allowLand025 | allowLand205 | allowTakeOff205 | allowTakeOff025 | allowTakeOff076 | allowTakeOff256 | allowLand076 | allowLand256 );
+
+gar GF green025;
+
+gar G (passengersWaiting_secondary & !(busLocation & green025)) -> passengersWaiting_secondary;
+
+
+//gar G birdsRadarSouth -> !(allowLand025 | allowLand205 | allowTakeOff205 | allowTakeOff025);
+
+//gar G birdsRadarNorth -> !(allowLand076 | allowLand256 | allowTakeOff256 | allowTakeOff076);
+
+//gar G oneToFive -> !(allowLand076 | allowLand256 | allowLand205 | allowLand025);
+
+//gar G (isWindEast & !isWindStrong) ->  (allowLand076 | allowLand025 | allowTakeOff025 | allowTakeOff076);
+
+//gar G (isWindEast & isWindStrong) ->  (allowLand076 | allowTakeOff076);
+
+//gar G (!isWindEast & !isWindStrong) ->  (allowLand256 | allowLand205 | allowTakeOff205 | allowTakeOff256);
+
+//gar G (isWindEast & isWindStrong) ->  (allowLand256 | allowTakeOff256);
+
+gar GF !isWindEast;
+gar GF !isWindStrong;
+gar GF !birdsRadarNorth;
+gar GF !birdsRadarSouth;
+gar GF !isFoggy;
+gar GF !oneToFive;

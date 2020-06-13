@@ -1,0 +1,84 @@
+module AutonomousVehicle
+
+// *********************************
+// ********** Definitions **********
+// *********************************
+define 
+	drive := speed > 0;
+	driveFast := speed >= 5;	
+	
+// *********************************
+// ***** Environment Variables *****
+// *********************************
+env boolean pedestrianFirstLane;
+env boolean pedestrianSecondLane;
+env boolean pedestrianThirdLane;
+
+env boolean greenLightFirstLane;
+env boolean greenLightSecondLane;
+env boolean greenLightThirdLane;
+
+env boolean obstacleFirstLane;
+env boolean obstacleSecondLane;
+env boolean obstacleThirdLane;
+
+env boolean crosswalk;
+
+// *********************************
+// ******* System Variables ********
+// *********************************
+type Lane = {First, Second, Third};
+sys Lane currentLane;
+sys Int(0..10) speed;
+
+// *********************************
+// ********** Assumptions **********
+// *********************************
+predicate carShouldStop(boolean greenLight, boolean pedestrian):
+	pedestrian | !greenLight;
+
+predicate carCanDriveInLane(boolean greenLight, boolean pedestrian, boolean obstacle):
+	greenLight & !pedestrian & !obstacle;	
+
+// Each lane is free infinitely often
+asm GF carCanDriveInLane(greenLightFirstLane, pedestrianFirstLane, obstacleFirstLane);
+asm GF carCanDriveInLane(greenLightSecondLane, pedestrianSecondLane, obstacleSecondLane);
+asm GF carCanDriveInLane(greenLightThirdLane, pedestrianThirdLane, obstacleThirdLane);
+
+// If there is an obstacle in a lane, there is a lane without an obstacle to move to in the next step
+asm G obstacleFirstLane -> !next(obstacleSecondLane);
+asm G obstacleSecondLane -> !next(obstacleFirstLane) | !next(obstacleThirdLane);
+asm G obstacleThirdLane -> !next(obstacleSecondLane);
+
+// *********************************
+// ********* Guarantees ************
+// *********************************
+// The car should stop driving if there is a pedestrian or a red light in the current lane
+gar G carShouldStop(greenLightFirstLane, pedestrianFirstLane) & currentLane = First -> !drive;
+gar G carShouldStop(greenLightSecondLane, pedestrianSecondLane) & currentLane = Second -> !drive;
+gar G carShouldStop(greenLightThirdLane, pedestrianThirdLane) & currentLane = Third -> !drive;
+
+// The car should move to another lane if there is an obstacle in the current lane
+gar G (currentLane = First & obstacleFirstLane) -> next(currentLane) = Second;
+gar G (currentLane = Second & obstacleSecondLane & next(obstacleFirstLane)) -> next(currentLane) = Third;
+gar G (currentLane = Second & obstacleSecondLane & next(obstacleThirdLane)) -> next(currentLane) = First;
+gar G (currentLane = Second & obstacleSecondLane & !next(obstacleThirdLane) & !next(obstacleFirstLane)) -> next(currentLane) != Second;
+gar G (currentLane = Third & obstacleThirdLane) -> next(currentLane) = Second;
+
+// The car should slow if there is a crosswalk (the crosswalk is in all three lanes)
+gar G crosswalk -> !driveFast;
+
+// The car should be in a free lane infinitely often
+gar carCanDriveInCurrentLane:
+	GF (currentLane = First & carCanDriveInLane(greenLightFirstLane, pedestrianFirstLane, obstacleFirstLane)) |
+	   (currentLane = Second & carCanDriveInLane(greenLightSecondLane, pedestrianSecondLane, obstacleSecondLane)) |
+	   (currentLane = Third & carCanDriveInLane(greenLightThirdLane, pedestrianThirdLane, obstacleThirdLane));
+	   
+// The car shouldn't stop when it is able to drive	   
+gar G carCanDriveInLane(greenLightFirstLane, pedestrianFirstLane, obstacleFirstLane) & currentLane = First -> drive;
+gar G carCanDriveInLane(greenLightSecondLane, pedestrianSecondLane, obstacleSecondLane) & currentLane = Second -> drive;
+gar G carCanDriveInLane(greenLightThirdLane, pedestrianThirdLane, obstacleThirdLane) & currentLane = Third -> drive;
+
+// The car shouldn't jump over a lane
+gar G currentLane = First -> next(currentLane) != Third;
+gar G currentLane = Third -> next(currentLane) != First;

@@ -1,0 +1,92 @@
+module SmartHome3_sprint01_ver1
+  
+//----Environment controlled input variables (sensors) ----
+define
+unpleasantTemperatureStateBound:= 10;
+TemperatureMaxChange := 5;
+// movement sensors
+env boolean livingRoomPresenceSensor;
+env boolean kitchenPresenceSensor;
+env boolean bathroomPresenceSensor;
+env boolean bedroomPresenceSensor;
+  
+env boolean saturday;
+  
+//Bedroom light off switch
+env boolean bedroomLightOffSwitch;
+  
+// more sensors
+env Int (1..50) outsideTemperature;
+  
+predicate houseIsEmpty():
+!livingRoomPresenceSensor& !kitchenPresenceSensor & !bathroomPresenceSensor & !bedroomPresenceSensor;
+  
+  
+// AC
+sys boolean AC;
+  
+//The affect of the AC on the home temperature such that homeTemperature=outsideTemperature+acAffect
+sys Int(0..100) acAffect;
+  
+//acAffect is gradual
+gar G AC->(next(acAffect)<acAffect+TemperatureMaxChange)&(next(acAffect)>acAffect-TemperatureMaxChange);
+gar G !AC->next(acAffect)=0;
+  
+sys Int(1..50) homeTemperature;
+gar G (homeTemperature=outsideTemperature+acAffect-50);//-50 because I couldn't create acAffect as an integer that gets negative values too
+  
+predicate houseTemperatureIsPleasant():
+(homeTemperature < 18 | 26 < homeTemperature);
+  
+counter unpleasantTemperatureCounter(0..unpleasantTemperatureStateBound) {
+unpleasantTemperatureCounter=0;
+inc: !houseTemperatureIsPleasant()&!houseIsEmpty();
+reset: houseTemperatureIsPleasant();
+overflow: false;
+}
+  
+  
+  
+  
+  
+//----System controlled output variables (lights) ----
+// lights
+sys boolean livingRoomLight;
+sys boolean kitchenLight;
+sys boolean bathroomLight;
+sys boolean bedroomLight;
+  
+  
+//Locks
+sys boolean mainDoorIsLocked;
+  
+  
+  
+//----Assumptions ----
+  
+// there will be movements in every one of the rooms
+asm GF livingRoomPresenceSensor;
+asm GF kitchenPresenceSensor;
+asm GF bathroomPresenceSensor;
+asm GF bedroomPresenceSensor;
+  
+// the day will be saturday eventually
+asm GF saturday;
+asm GF !saturday;
+//----Guarantees ----
+  
+// movements make the light turn on or off (Guarantee 1)
+gar G !saturday->(livingRoomPresenceSensor <-> livingRoomLight);
+gar G !saturday->(kitchenPresenceSensor    <-> kitchenLight   );
+gar G !saturday->(bathroomPresenceSensor   <-> bathroomLight  );
+//(Guarantee 2)
+gar G !saturday->(bedroomPresenceSensor&!bedroomLightOffSwitch <-> bedroomLight);
+//(Requirement 2)
+gar G saturday->(livingRoomLight&kitchenLight&bathroomLight&!bedroomLight);
+  
+//The main door gets locked when the house is empty (Guarantee 3)
+gar G houseIsEmpty() -> mainDoorIsLocked;
+  
+  
+//active AC if house is not empty, and the house is to cold/hot
+gar G ( (!houseIsEmpty() & (homeTemperature < 18 | 26 < homeTemperature))-> AC);

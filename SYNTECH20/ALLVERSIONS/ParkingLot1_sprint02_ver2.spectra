@@ -1,0 +1,102 @@
+import "./DwyerPatterns.spectra"
+module ParkingLot
+
+define
+	numOfSpots := 7;
+	numOfSpotsPlusOne := numOfSpots + 1;
+	numOfSpotsPlusTwo := numOfSpots + 2;
+	
+	
+//Environment controlled input variables (vehicles and pedestrians)
+env boolean carEntrance; // car is waiting to enter the parking lot
+env boolean carExit; // car is waiting to exit the parking lot
+env boolean[numOfSpotsPlusOne] carInSpot; 
+
+/* Start */
+/* For upcoming sprints - VIP and pedestrians*/
+//env boolean carVipEntrance;
+//env boolean carVipExit;
+//env boolean pedestrianRight;
+//env boolean pedestrianLeft;
+/*End */
+
+//System controlled output variables (gates and lights)
+sys boolean gateEntrance; // controls entrance gate
+sys boolean gateExit; // controls exit gate
+sys boolean [numOfSpotsPlusTwo]spotLight; // controls the spot lights in the parking lot
+sys Int(0..numOfSpotsPlusTwo) freeSpot; // indicates a number of a free spot to park in
+
+
+/* Start */
+/* For upcoming sprints - VIP and pedestrians*/
+//sys boolean gateVipEnterance;
+//sys boolean gateVipExit;
+//sys boolean greenRight;
+//sys boolean greenLeft;
+/*End */
+
+
+
+// assumptions
+//asm G carEntrance -> (((next(carEntrance) = carEntrance)) | gateEntrance); // a waiting car will not disappear
+asm G ((carEntrance)-> !(next(carEntrance)));
+// | ((carEntrance & spotsCounter=numOfSpots) -> (next(carEntrance) = carEntrance)); //
+asm G carExit -> !(next(carExit));
+
+asm !carExit; // at the beginning the parking lot is empty
+asm !carEntrance; // at the beginning the parking lot is empty
+
+// counts how many regular cars are currently in the parking lot
+counter spotsCounter(0..numOfSpots) {
+	spotsCounter = 0;
+	inc: gateEntrance;
+	dec: gateExit;
+	overflow: false;
+}
+
+/* Start */
+/* For upcoming sprints - VIP and pedestrians*/
+// counts how many VIP cars are currently in the parking lot
+//counter vipSpotsCounter(0..3) {
+//	vipSpotsCounter = 0;
+//	inc: gateVipEnterance;
+//	dec: gateVipExit;
+//	overflow: false;
+//}
+/*End */
+
+//At the beginning the gates are closed.
+gar !gateExit;
+gar !gateEntrance;
+
+/* Start */
+/* For upcoming sprints - VIP and pedestrians*/
+//gar !gateVipExit;
+//gar !gateVipEnterance;
+/* End */
+
+//asm G (carEntrance & (spotsCounter = numOfSpots)) -> next(carEntrance);
+//& spotsCounter > 0
+//  & spotsCounter < numOfSpots
+gar G (carEntrance & freeSpot != 8) -> gateEntrance; // if there are spots available in the parking lot - open the gate
+gar G (carExit ) -> gateExit; // if a car wants to exit - open the exit gate
+gar G gateEntrance -> ! next(gateEntrance); // the gate opens for each car once at a time
+gar G gateExit -> ! next(gateExit); // the gate opens for each car once at a time
+
+gar G (!carEntrance) -> (!gateEntrance);
+gar G (!carExit) -> (!gateExit);
+
+// freeSpot update
+//gar G ((!spotLight[0] & freeSpot = 0) | (!spotLight[1] & freeSpot = 1) | (!spotLight[2] & freeSpot = 2)| (!spotLight[3] & freeSpot = 3) | (!spotLight[4] & freeSpot = 4) | (!spotLight[5] & freeSpot = 5 | (!spotLight[6] & freeSpot = 6) |(!spotLight[7] & freeSpot = 7))) | freeSpot=numOfSpotsPlusOne;
+gar G (spotLight[0] <-> carInSpot[0]);
+gar G (spotLight[1] <-> carInSpot[1]);
+gar G (spotLight[2] <-> carInSpot[2]);
+gar G (spotLight[3] <-> carInSpot[3]);
+gar G (spotLight[4] <-> carInSpot[4]);
+gar G (spotLight[5] <-> carInSpot[5]);
+gar G (spotLight[6] <-> carInSpot[6]); 
+gar G (spotLight[7] <-> carInSpot[7]);
+
+// find minimum of free spots array
+gar G exists i in Int(0..numOfSpotsPlusOne).forall j in Int(0..numOfSpotsPlusOne).(j<i->spotLight[j]=true)&spotLight[i]=false&freeSpot=i;  
+

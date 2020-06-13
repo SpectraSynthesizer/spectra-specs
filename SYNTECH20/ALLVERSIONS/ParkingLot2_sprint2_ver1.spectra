@@ -1,0 +1,68 @@
+spec ParkingLot2
+define NUMBEROFSPOTS := 5;
+
+//-----------Environment variables
+
+// there can only be one car at the lot entrance - #2
+env boolean carInEntrance;
+env boolean [NUMBEROFSPOTS] carWantsToLeave;
+
+//-----------System variables
+
+sys boolean [NUMBEROFSPOTS] spotIsTaken;
+sys boolean gateIsOpen;
+sys boolean resetHours;
+
+sys {OPEN, CLOSED} mode;
+//-----------Assumptions
+
+// a car will eventually arrive at the parking lot - #6
+asm GF carInEntrance;
+
+// a parked car will eventually leave the parking lot - #7    // repetitions due to spectra's limitations
+asm GF carWantsToLeave[0];
+asm GF carWantsToLeave[1];
+asm GF carWantsToLeave[2];
+asm GF carWantsToLeave[3];
+asm GF carWantsToLeave[4];
+
+// A car at lot entrance stays there until entering the lot - #4
+asm carNotDisappear:
+	G carInEntrance & !gateIsOpen -> next(carInEntrance);
+
+//-----------Guarantees
+
+gar initiallySpotsNonTaken:
+	forall i in Int(0..(NUMBEROFSPOTS-1)). (spotIsTaken[i] = false);
+
+// A car can park only park in an empty spot - #3, #9
+gar G gateIsOpen <-> ((mode = OPEN) & carInEntrance & (exists i in Int(0..(NUMBEROFSPOTS-1)). spotIsTaken[i] = false));
+
+// a parking spot with a car is considered taken, otherwise non taken - #5, #8, #10
+gar G next(spotIsTaken[0]) = (gateIsOpen & !spotIsTaken[0]) | (spotIsTaken[0] & ! carWantsToLeave[0]);
+gar G next(spotIsTaken[1]) = (gateIsOpen & spotIsTaken[0] & !spotIsTaken[1]) | (spotIsTaken[1] & !carWantsToLeave[1]);
+gar G next(spotIsTaken[2]) = (gateIsOpen & spotIsTaken[0] & spotIsTaken[1] & !spotIsTaken[2]) | (spotIsTaken[2] & !carWantsToLeave[2]);
+gar G next(spotIsTaken[3]) = (gateIsOpen & spotIsTaken[0] & spotIsTaken[1] & spotIsTaken[2] & !spotIsTaken[3]) | (spotIsTaken[3] & !carWantsToLeave[3]);
+gar G next(spotIsTaken[4]) = (gateIsOpen & spotIsTaken[0] & spotIsTaken[1] & spotIsTaken[2] & spotIsTaken[3] & !spotIsTaken[4]) | (spotIsTaken[4] & !carWantsToLeave[4]);
+	
+// a counter to calculate the operating hours of the parking lot
+counter hours(0..12){
+	hours = 0;
+	inc: !resetHours;
+	reset: resetHours;
+	overflow: false;
+}
+
+gar G resetHours = (hours = 12);
+
+// the parking lot is open during hours 0-7 - #11
+gar G (hours < 8) -> (mode = OPEN);
+
+// the parking lot is open during hours 8-12 - #12
+gar G (hours >= 8) -> (mode = CLOSED);
+
+// the parking lot will always eventually be open - #13
+gar GF mode = OPEN;
+gar GF resetHours;
+
+

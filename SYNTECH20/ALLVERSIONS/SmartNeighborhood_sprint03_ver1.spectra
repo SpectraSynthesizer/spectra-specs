@@ -1,0 +1,194 @@
+
+spec SmartNeighborhood_sprint02_ver1
+
+//***Environment controlled input variables (sensors)***
+define N := 4;
+define crosswalkLoc := 1; //between can 1 and 2.
+env boolean sidewalkNorth;
+env boolean sidewalkSouth;
+env boolean crossingCrosswalkNS;
+//env boolean crossingCrosswalkSN;
+env boolean[N] garbageCansNorth;
+env boolean[N] garbageCansSouth;
+
+
+//***System controlled output variables (lights)***
+sys boolean isCleaningN;
+sys boolean isCleaningS;
+sys boolean lightNorth;
+sys boolean lightSouth;
+sys Int(0..N) garbageTruckNorth_location; //location N means not on the street.
+sys Int(0..N) garbageTruckSouth_location;
+
+//***Initial assumptions***
+//all pedestrian areas start empty
+asm !sidewalkNorth & !sidewalkSouth & !crossingCrosswalkNS; //& !crossingCrosswalkSN;
+asm all_cans_start_empty:
+	forall i in Int(0..(N-1)). ((!garbageCansNorth[i]) & !garbageCansSouth[i]);
+
+
+
+//***Assumptions on pedestrian walking routes***
+asm G sidewalkNorth -> next(crossingCrosswalkNS);
+asm G crossingCrosswalkNS -> next(sidewalkSouth);
+//asm G sidewalkSouth -> next(crossingCrosswalkSN); //sims in pool with no rail
+//asm G crossingCrosswalkSN -> next(sidewalkNorth);
+asm GF !sidewalkNorth;
+asm GF !sidewalkSouth;
+asm GF !crossingCrosswalkNS; //& !crossingCrosswalkSN;
+//Pedestrians can't show up on the crosswalk with coming from the north side.
+asm G (next(crossingCrosswalkNS)->sidewalkNorth); 
+
+
+//***Assumptions on garbage cans***
+
+//Eventually always each can will be full:
+asm GF garbageCansNorth[0];
+asm GF garbageCansSouth[0];
+asm GF garbageCansNorth[1];
+asm GF garbageCansSouth[1];
+asm GF garbageCansNorth[2];
+asm GF garbageCansSouth[2];
+asm GF garbageCansNorth[3];
+asm GF garbageCansSouth[3];
+
+//if truck is at can i, and it's cleaning, then the can will be empty on next stage.
+asm G forall i in Int(0..(N-1)). ((garbageTruckNorth_location = i) & garbageCansNorth[i] & isCleaningN) -> next(!garbageCansNorth[i]);
+asm G forall i in Int(0..(N-1)). ((garbageTruckSouth_location = i) & garbageCansSouth[i] & isCleaningS) -> next(!garbageCansSouth[i]);
+
+//garbage can stays full until it's cleaned
+asm G (garbageCansNorth[0] & (garbageTruckNorth_location != 0 | !isCleaningN)) -> next(garbageCansNorth[0]);
+asm G (garbageCansNorth[1] & (garbageTruckNorth_location != 1 | !isCleaningN)) -> next(garbageCansNorth[1]);
+asm G (garbageCansNorth[2] & (garbageTruckNorth_location != 2 | !isCleaningN)) -> next(garbageCansNorth[2]);
+asm G (garbageCansNorth[3] & (garbageTruckNorth_location != 3 | !isCleaningN)) -> next(garbageCansNorth[3]);
+
+asm G (garbageCansSouth[0] & (garbageTruckSouth_location != 0 | !isCleaningS)) -> next(garbageCansSouth[0]);
+asm G (garbageCansSouth[1] & (garbageTruckSouth_location != 1 | !isCleaningS)) -> next(garbageCansSouth[1]);
+asm G (garbageCansSouth[2] & (garbageTruckSouth_location != 2 | !isCleaningS)) -> next(garbageCansSouth[2]);
+asm G (garbageCansSouth[3] & (garbageTruckSouth_location != 3 | !isCleaningS)) -> next(garbageCansSouth[3]);
+
+define crossing := crossingCrosswalkNS; //| crossingCrosswalkSN;	
+
+//***Initial Guarantees***
+gar !lightNorth & !lightSouth;
+gar garbageTruckNorth_location = N;
+gar garbageTruckSouth_location = N;
+gar !isCleaningN;
+gar !isCleaningS;
+
+//***truck Guarantees***
+//If truck is before crosswalk, and someone is crossing, then it won't move
+gar G (crossing & (garbageTruckNorth_location = crosswalkLoc)) ->
+   (next(garbageTruckNorth_location) = crosswalkLoc); 
+gar G (crossing & (garbageTruckSouth_location = crosswalkLoc)) ->
+   (next(garbageTruckSouth_location) = crosswalkLoc); 
+
+//If truck at full can, stays there to clean next turn
+predicate truckAtFullCanWillCleanNorth(Int(0..(3)) i):
+	(garbageCansNorth[i] & (garbageTruckNorth_location = i) & !isCleaningN) -> (next(isCleaningN) & (next(garbageTruckNorth_location) = i));
+
+gar G truckAtFullCanWillCleanNorth(0);
+gar G truckAtFullCanWillCleanNorth(1);
+gar G truckAtFullCanWillCleanNorth(2);
+gar G truckAtFullCanWillCleanNorth(3);
+
+predicate truckAtFullCanWillCleanSouth(Int(0..(3)) i):
+	(garbageCansSouth[i] & (garbageTruckSouth_location = i) & !isCleaningS) -> (next(isCleaningS) & (next(garbageTruckSouth_location) = i));
+
+gar G truckAtFullCanWillCleanSouth(0);
+gar G truckAtFullCanWillCleanSouth(1);
+gar G truckAtFullCanWillCleanSouth(2);
+gar G truckAtFullCanWillCleanSouth(3);
+
+	
+//If truck is currently cleaning a full can, next state it won't be cleaning and can will be empty.
+predicate truckCleaningWillStopNorth(Int(0..(3)) i):
+	((garbageCansNorth[i] & (garbageTruckNorth_location = i) & isCleaningN)) -> 
+										(next(!isCleaningN) & next(!garbageCansNorth[i]));
+gar G truckCleaningWillStopNorth(0);
+gar G truckCleaningWillStopNorth(1);
+gar G truckCleaningWillStopNorth(2);
+gar G truckCleaningWillStopNorth(3);
+
+predicate truckCleaningWillStopSouth(Int(0..(3)) i):
+	((garbageCansSouth[i] & (garbageTruckSouth_location = i) & isCleaningS)) -> 
+										(next(!isCleaningS) & next(!garbageCansSouth[i]));
+gar G truckCleaningWillStopSouth(0);
+gar G truckCleaningWillStopSouth(1);
+gar G truckCleaningWillStopSouth(2);
+gar G truckCleaningWillStopSouth(3);
+
+
+//If truck is cleaning, next turn it doesn't move and isn't cleaning 
+//gar G (forall i in Int(0..(N-1)). ((garbageTruckNorth_location = i) & garbageCansNorth[i] & isCleaningN)) -> next(garbageTruckNorth_location = i & !isCleaningN);
+//gar G (forall i in Int(0..(N-1)). ((garbageTruckSouth_location = i) & garbageCansSouth[i] & isCleaningS)) -> next(garbageTruckSouth_location = i & !isCleaningS);
+
+
+//Truck cleaning means it's at a full can
+gar G (isCleaningN -> (exists i in Int(0..(N-1)). (garbageCansNorth[i] = true & garbageTruckNorth_location = i)));
+gar G (isCleaningS -> (exists i in Int(0..(N-1)). (garbageCansSouth[i] = true & garbageTruckSouth_location = i)));
+
+
+//Eventually always, the truck will come to clean all full cans.
+predicate isCleaningGarbageNorth(Int(0..(3)) i):
+	(garbageCansNorth[i] & (garbageTruckNorth_location = i) & isCleaningN);
+gar GF isCleaningGarbageNorth(0);
+gar GF isCleaningGarbageNorth(1);
+gar GF isCleaningGarbageNorth(2);
+gar GF isCleaningGarbageNorth(3);
+
+predicate isCleaningGarbageSouth(Int(0..(3)) i):
+	(garbageCansSouth[i] & (garbageTruckSouth_location = i) & isCleaningS);
+gar GF isCleaningGarbageSouth(0);
+gar GF isCleaningGarbageSouth(1);
+gar GF isCleaningGarbageSouth(2);
+gar GF isCleaningGarbageSouth(3);
+
+
+//Garbage trucks can only move one can forward, or stay in place.
+gar G (garbageTruckNorth_location != N) -> ((next(garbageTruckNorth_location) = garbageTruckNorth_location) | (next(garbageTruckNorth_location) = (garbageTruckNorth_location + 1)));
+gar G (garbageTruckSouth_location != N) -> ((next(garbageTruckSouth_location) = garbageTruckSouth_location) | (next(garbageTruckSouth_location) = (garbageTruckSouth_location + 1)));
+
+//Trucks not on road, can only appear at can 0.
+gar G garbageTruckNorth_location = N -> (next(garbageTruckNorth_location) = 0 | next(garbageTruckNorth_location) = N);
+gar G garbageTruckSouth_location = N -> (next(garbageTruckSouth_location) = 0 | next(garbageTruckSouth_location) = N);
+
+//Truck on empty can will keep moving
+gar G (!garbageCansNorth[0] & garbageTruckNorth_location = 0) -> (next(garbageTruckNorth_location) = 1);
+gar G (!garbageCansNorth[1] & garbageTruckNorth_location = 1 & !crossing) -> (next(garbageTruckNorth_location) = 2);
+gar G (!garbageCansNorth[2] & garbageTruckNorth_location = 2) -> (next(garbageTruckNorth_location) = 3);
+gar G (!garbageCansNorth[3] & garbageTruckNorth_location = 3) -> (next(garbageTruckNorth_location) = 4);
+
+gar G (!garbageCansSouth[0] & garbageTruckSouth_location = 0) -> (next(garbageTruckSouth_location) = 1);
+gar G (!garbageCansSouth[1] & garbageTruckSouth_location = 1 & !crossing) -> (next(garbageTruckSouth_location) = 2);
+gar G (!garbageCansSouth[2] & garbageTruckSouth_location = 2) -> (next(garbageTruckSouth_location) = 3);
+gar G (!garbageCansSouth[3] & garbageTruckSouth_location = 3) -> (next(garbageTruckSouth_location) = 4);
+
+define at_least_one_can_full := 
+	garbageCansNorth[0] | garbageCansNorth[1] | garbageCansNorth[2] | garbageCansNorth[3];
+ 
+weight -1
+	at_least_one_can_full & garbageTruckNorth_location = N;
+
+weight 1 
+	!(garbageTruckNorth_location = N) & at_least_one_can_full;
+	
+	
+
+//***Light Guarantees***
+gar G sidewalkNorth -> lightNorth;
+gar G sidewalkSouth -> lightSouth;
+gar GF !lightNorth;
+gar GF !lightSouth;
+gar G !sidewalkNorth -> !lightNorth; 
+gar G !sidewalkSouth-> !lightSouth;
+ 
+
+/*weight -1
+	lightNorth;
+weight -1
+	lightSouth;
+weight 1
+	lightNorth & sidewalkNorth;
+weight 1
+	lightSouth & sidewalkSouth;*/

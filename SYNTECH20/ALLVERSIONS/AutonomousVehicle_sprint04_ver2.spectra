@@ -1,0 +1,166 @@
+import "../DwyerPatterns.spectra"
+
+module AutonomousVehicle
+
+// *********************************
+// ********** Definitions **********
+// *********************************
+define 
+	drive := speed > 0;
+	driveFast := speed >= 3;
+	
+define
+	numberOfLanes := 4;
+	
+// *********************************
+// ***** Environment Variables *****
+// *********************************
+env boolean[numberOfLanes] pedestrianInLane;
+env boolean[numberOfLanes] slowCarInLane;
+env boolean[numberOfLanes] greenLightInLane;
+env boolean[numberOfLanes] obstacleInLane;
+
+env boolean crosswalk;
+env boolean gasStation;
+
+// *********************************
+// ******* System Variables ********
+// *********************************
+type Lane = {First, Second, Third, Fourth};
+sys Lane currentLane;
+sys Int(0..5) speed;
+sys boolean lowGas;
+sys boolean atGasStation;
+
+// *********************************
+// ********** Predicates ***********
+// *********************************
+// The car should stop if there is a pedestrian or a red light
+predicate carShouldStop(boolean greenLight, boolean pedestrian):
+	pedestrian | !greenLight;
+	
+// The car can drive in a lane if there is a green light and no pedestrian or an obstacle
+predicate carCanDriveInLane(boolean greenLight, boolean pedestrian, boolean obstacle):
+	greenLight & !pedestrian & !obstacle;	
+	
+predicate carCanDriveInFirstLane():
+	carCanDriveInLane(greenLightInLane[0], pedestrianInLane[0], obstacleInLane[0]);
+	
+predicate carCanDriveInSecondLane():
+	carCanDriveInLane(greenLightInLane[1], pedestrianInLane[1], obstacleInLane[1]);
+
+predicate carCanDriveInThirdLane():
+	carCanDriveInLane(greenLightInLane[2], pedestrianInLane[2], obstacleInLane[2]);
+
+predicate carCanDriveInFourthLane():
+	carCanDriveInLane(greenLightInLane[3], pedestrianInLane[3], obstacleInLane[3]);
+
+// The car can move to a lane if it can drive in the lane and there is no slow car in the lane
+predicate carCanMoveToFirstLane():
+	carCanDriveInFirstLane() & !slowCarInLane[0];
+	
+predicate carCanMoveToSecondLane():
+	carCanDriveInSecondLane() & !slowCarInLane[1];
+
+predicate carCanMoveToThirdLane():
+	carCanDriveInThirdLane() & !slowCarInLane[2];
+	
+predicate carCanMoveToFourthLane():
+	carCanDriveInFourthLane() & !slowCarInLane[3];
+	
+// *********************************
+// ********** Assumptions **********
+// *********************************
+// Each lane is free infinitely often
+asm GF carCanDriveInFirstLane();
+asm GF carCanDriveInSecondLane();
+asm GF carCanDriveInThirdLane();
+asm GF carCanDriveInFourthLane();
+
+// There should be a gas station infinitely often
+asm GF gasStation;
+
+// If there is an obstacle in a lane, there is a lane without an obstacle to move to in the next step
+asm G obstacleInLane[0] -> next(carCanMoveToSecondLane());
+asm G obstacleInLane[1] -> next(carCanMoveToFirstLane()) | next(carCanMoveToThirdLane());
+asm G obstacleInLane[1] & obstacleInLane[2] -> next(carCanMoveToFirstLane());
+asm G obstacleInLane[1] & obstacleInLane[0] -> next(carCanMoveToThirdLane());
+asm G obstacleInLane[2] -> next(carCanMoveToSecondLane()) | next(carCanMoveToFourthLane());
+asm G obstacleInLane[2] & obstacleInLane[1] -> next(carCanMoveToFourthLane());
+asm G obstacleInLane[2] & obstacleInLane[3] -> next(carCanMoveToSecondLane());
+asm G obstacleInLane[3] -> next(carCanMoveToThirdLane());
+
+// *********************************
+// ********** Guarantees ***********
+// *********************************
+// The car should stop driving if there is a pedestrian or a red light in the current lane
+gar G carShouldStop(greenLightInLane[0], pedestrianInLane[0]) & currentLane = First -> !drive;
+gar G carShouldStop(greenLightInLane[1], pedestrianInLane[1]) & currentLane = Second -> !drive;
+gar G carShouldStop(greenLightInLane[2], pedestrianInLane[2]) & currentLane = Third -> !drive;
+gar G carShouldStop(greenLightInLane[3], pedestrianInLane[3]) & currentLane = Fourth -> !drive;
+
+// The car should move to another lane if there is an obstacle in the current lane
+gar G (currentLane = First & obstacleInLane[0]) -> next(currentLane) = Second;
+
+gar G (currentLane = Second & obstacleInLane[1] & !carCanMoveToFirstLane()) -> next(currentLane) = Third;
+gar G (currentLane = Second & obstacleInLane[1] & !carCanMoveToThirdLane()) -> next(currentLane) = First;
+gar G (currentLane = Second & obstacleInLane[1]) -> next(currentLane) != Second;
+
+gar G (currentLane = Third & obstacleInLane[2] & !carCanMoveToFourthLane()) -> next(currentLane) = Second;
+gar G (currentLane = Third & obstacleInLane[2] & !carCanMoveToSecondLane()) -> next(currentLane) = Fourth;
+gar G (currentLane = Third & obstacleInLane[2]) -> next(currentLane) != Third;
+
+gar G (currentLane = Fourth & obstacleInLane[3]) -> next(currentLane) = Third;
+
+// The car should slow or move to another lane if there is a slow car in the current lane
+gar G (currentLane = First & slowCarInLane[0] & carCanMoveToSecondLane()) -> next(currentLane) = Second;
+gar G (currentLane = First & slowCarInLane[0] & !carCanMoveToSecondLane()) -> !driveFast;
+
+gar G (currentLane = Second & slowCarInLane[1] & !carCanMoveToFirstLane() & carCanMoveToThirdLane()) -> next(currentLane) = Third;
+gar G (currentLane = Second & slowCarInLane[1] & !carCanMoveToThirdLane() & carCanMoveToFirstLane()) -> next(currentLane) = First;
+gar G (currentLane = Second & slowCarInLane[1] & carCanMoveToFirstLane() & carCanMoveToThirdLane()) -> next(currentLane) != Second;
+gar G (currentLane = Second & slowCarInLane[1] & !carCanMoveToFirstLane() & !carCanMoveToThirdLane()) -> !driveFast;
+
+gar G (currentLane = Third & slowCarInLane[2] & !carCanMoveToSecondLane() & carCanMoveToFourthLane()) -> next(currentLane) = Fourth;
+gar G (currentLane = Third & slowCarInLane[2] & !carCanMoveToFourthLane() & carCanMoveToSecondLane()) -> next(currentLane) = Second;
+gar G (currentLane = Third & slowCarInLane[2] & carCanMoveToSecondLane() & carCanMoveToFourthLane()) -> next(currentLane) != Third;
+gar G (currentLane = Third & slowCarInLane[2] & !carCanMoveToSecondLane() & !carCanMoveToFourthLane()) -> !driveFast;
+
+gar G (currentLane = Fourth & slowCarInLane[3] & carCanMoveToThirdLane()) -> next(currentLane) = Third;
+gar G (currentLane = Fourth & slowCarInLane[3] & !carCanMoveToThirdLane()) -> !driveFast;
+
+// The car should slow if there is a crosswalk or if the gas is low
+gar G crosswalk | lowGas -> !driveFast;
+
+// The car should get to a gas station when the gas is low, while gas station are in the rightmost lane only
+gar G lowGas & gasStation & currentLane = Fourth <-> atGasStation;
+gar pRespondsToS(lowGas, atGasStation);
+
+// After stopping in a gas station, the gas isn't low anymore
+gar G atGasStation -> !lowGas;
+
+// The car should stop when its in a gas station
+gar G atGasStation -> !drive;
+
+// The car should be in a free lane infinitely often
+gar carCanDriveInCurrentLane:
+	GF (currentLane = First & carCanDriveInFirstLane()) | (currentLane = Second & carCanDriveInSecondLane()) |
+	   (currentLane = Third & carCanDriveInThirdLane()) | (currentLane = Fourth & carCanDriveInFourthLane());
+	   
+// The car shouldn't stop when it is able to drive 
+gar G carCanDriveInFirstLane() & currentLane = First -> drive;
+gar G carCanDriveInSecondLane() & currentLane = Second -> drive;
+gar G carCanDriveInThirdLane() & currentLane = Third -> drive;
+gar G carCanDriveInFourthLane() & currentLane = Fourth -> drive;
+
+// The car shouldn't change lane if there is no need to
+//gar G currentLane = First & carCanDriveInFirstLane() & !slowCarInLane[0] -> next(currentLane) = First;
+//gar G currentLane = Second & carCanDriveInSecondLane() & !slowCarInLane[1] -> next(currentLane) = Second;
+//gar G currentLane = Third & carCanDriveInThirdLane() & !slowCarInLane[2] -> next(currentLane) =  Third;
+//gar G currentLane = Fourth & carCanDriveInFourthLane() & !slowCarInLane[3] -> next(currentLane) = Fourth;
+
+// The car shouldn't jump over a lane
+gar G currentLane = First -> next(currentLane) = First | next(currentLane) = Second;
+gar G currentLane = Third -> next(currentLane) != First;
+gar G currentLane = Second -> next(currentLane) != Fourth;
+gar G currentLane = Fourth -> next(currentLane) = Fourth | next(currentLane) = Third;

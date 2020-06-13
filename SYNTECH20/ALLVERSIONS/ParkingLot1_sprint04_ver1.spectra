@@ -1,0 +1,117 @@
+import "./DwyerPatterns.spectra"
+module ParkingLot
+
+define
+	numOfSpots := 7;
+	numOfSpotsPlusOne := numOfSpots + 1;
+	numOfSpotsPlusTwo := numOfSpots + 2;
+	
+	
+//Environment controlled input variables (vehicles and pedestrians)
+env boolean carEntrance; // car is waiting to enter the parking lot
+env boolean carExit; // car is waiting to exit the parking lot
+env boolean[numOfSpotsPlusOne] carInSpot; 
+
+
+env boolean carVipEntrance;
+env boolean carVipExit;
+env boolean pedestrianRight;
+env boolean pedestrianLeft;
+
+
+//System controlled output variables (gates and lights)
+sys boolean gateEntrance; // controls entrance gate
+sys boolean gateExit; // controls exit gate
+sys boolean [numOfSpotsPlusTwo]spotLight; // controls the spot lights in the parking lot
+sys Int(0..numOfSpotsPlusTwo) freeSpot; // indicates a number of a free spot to park in
+sys boolean[numOfSpotsPlusTwo] spotMaintainace;
+sys boolean parkingLotMaintainace;
+
+sys boolean gateVipEntrance;
+sys boolean gateVipExit;
+sys boolean pedetrianRightLight;
+sys boolean pedetrianLeftLight;
+
+
+
+// assumptions
+asm G ((carEntrance & freeSpot != 8 & !pedetrianRightLight & !gateVipEntrance)-> !(next(carEntrance)));
+asm G carExit -> !(next(carExit));
+
+asm G carVipExit -> !(next(carVipExit));
+asm G ((carVipEntrance & freeSpot != 8 & !pedetrianLeftLight)-> !(next(carVipEntrance)));
+
+
+asm !carExit; // at the beginning the parking lot is empty
+asm !carEntrance; // at the beginning the parking lot is empty
+asm !carVipEntrance;
+asm !carVipExit;
+
+//At the beginning the gates are closed.
+gar !gateExit;
+gar !gateEntrance;
+
+gar !gateVipExit;
+gar !gateVipEntrance;
+
+gar GF !pedetrianRightLight;
+gar GF !pedetrianLeftLight;
+
+
+
+gar G (carEntrance & freeSpot != 8 & !gateVipEntrance & !pedetrianRightLight) -> gateEntrance; // if there are spots available in the parking lot - open the gate
+gar G (carExit ) -> gateExit; // if a car wants to exit - open the exit gate
+gar G (carVipExit ) -> gateVipExit; // if a car wants to exit - open the exit gate
+
+gar G gateEntrance -> ! next(gateEntrance); // the gate opens for each car once at a time
+gar G gateExit -> ! next(gateExit); // the gate opens for each car once at a time
+
+// if there is a pedestrian crossing the cross-walk the gate won't open
+gar G pedetrianRightLight -> !gateEntrance;
+gar G pedetrianRightLight -> !gateVipExit;
+
+gar G pedetrianLeftLight -> !gateVipEntrance;
+gar G pedetrianLeftLight -> !gateExit;
+gar G freeSpot = 8 -> !gateEntrance;
+gar G (!carEntrance) -> (!gateEntrance);
+gar G (!carExit) -> (!gateExit);
+
+gar G freeSpot = 8 -> !gateVipEntrance;
+gar G (carVipEntrance & freeSpot != 8 & !pedetrianLeftLight) -> gateVipEntrance; 
+gar G gateVipEntrance -> !gateEntrance;
+
+gar G gateVipEntrance -> ! next(gateVipEntrance); // the gate opens for each car once at a time
+gar G gateVipExit -> ! next(gateVipExit); // the gate opens for each car once at a time
+
+
+gar G (!carVipEntrance) -> (!gateVipEntrance);
+gar G (!carVipExit) -> (!gateVipExit);
+
+// freeSpot update
+gar G forall i in Int(0..numOfSpots).(spotLight[i] <->carInSpot[i]);
+
+
+// find minimum of free spots array
+gar G exists i in Int(0..numOfSpotsPlusOne).forall j in Int(0..numOfSpotsPlusOne).(j<i->(spotLight[j]=true | spotMaintainace[j] = true)) &spotMaintainace[i] = false & spotLight[i]=false & freeSpot=i;  
+
+gar trig [true]*([gateEntrance | gateVipEntrance][true]*){3} |=>[parkingLotMaintainace];
+
+gar pRespondsToS(pedestrianRight, pedetrianRightLight);
+gar pRespondsToS(pedestrianLeft, pedetrianLeftLight);
+
+
+asm G parkingLotMaintainace -> (forall k in Int(0..numOfSpots).(next(carInSpot[k] = false)));
+gar G parkingLotMaintainace -> (forall k in Int(0..numOfSpotsPlusOne).(next(spotLight[k] = false)));
+gar G parkingLotMaintainace -> (forall k in Int(0..numOfSpotsPlusOne).(next(spotMaintainace[k] = false)));
+
+
+asm G parkingLotMaintainace -> next(!carVipExit);
+asm G parkingLotMaintainace -> next(!carExit);
+asm G parkingLotMaintainace -> next(!carVipEntrance);
+asm G parkingLotMaintainace -> next(!carEntrance);
+
+gar G parkingLotMaintainace -> next(!gateEntrance);
+gar G parkingLotMaintainace -> next(!gateVipEntrance);
+gar G parkingLotMaintainace -> next(!gateExit);
+gar G parkingLotMaintainace -> next(!gateVipExit);
+gar G parkingLotMaintainace -> next(!parkingLotMaintainace);

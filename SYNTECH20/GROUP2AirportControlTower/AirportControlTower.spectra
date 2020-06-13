@@ -1,0 +1,244 @@
+import "./patterns/DwyerPatterns.spectra"
+
+module AirPortModel
+
+
+/* @==========================@
+ * |  ENVIRONMENTAL VARIABLES |
+ * @==========================@ 
+ *
+ * Environmental factors
+ */
+env boolean isWindWest;      //1 iff the wind is blowing west
+env boolean isWindStrong;    // 1 iff the wind is strong
+env boolean isFoggy;         // 1 iff there is fog in the CTR
+env boolean birdsRadarSouth; // 1 iff there are birds in the southern part of the CTR
+env boolean birdsRadarNorth; // 1 iff there are birds in the southern part of the CTR
+env boolean oneToFive;       // 1 iff The time is between 01:00 to 05:00
+/*
+ * Human factors 
+ */
+env boolean landRequest;       // 1 iff a plane is requesting to land
+env boolean departRequest;     // 1 iff a plane is requesting to depart
+env boolean passengersArrived; //1 iff a passenger arrived to the terminal for departure
+
+/* @===================@
+ * |  SYSTEM VARIABLES |
+ * @===================@ 
+ * 
+ * Runway options for takeoff and landing
+ */
+sys boolean takeOffMain;     // 1 iff landing in 025 is allowed
+sys boolean takeOffSec;      // 1 iff landing in 025 is allowed
+sys boolean allowLand025;    // 1 iff landing in 025 is allowed
+sys boolean allowLand076;    // 1 iff landing in 076 is allowed
+sys boolean allowLand205;    // 1 iff landing in 205 is allowed
+sys boolean allowLand256;    // 1 iff landing in 256 is allowed
+sys boolean allowTakeOff025; // 1 iff takeoff in 025 is allowed
+sys boolean allowTakeOff076; // 1 iff takeoff in 076 is allowed
+sys boolean allowTakeOff205; // 1 iff takeoff in 205 is allowed
+sys boolean allowTakeOff256; // 1 iff takeoff in 256 is allowed
+
+/*
+ * Ground system variables
+ */
+sys boolean parkInMain;                         //decide where a plan how land will park ,1 iff main
+sys boolean greenbus;                           //1 iff there is a green light for the bus to cross
+sys boolean busLocation;                        //the bus is at main_parking(1) or secondary parking(0)
+sys boolean setDepartParkingLotForPassengers;   //decides where to send the people who wants to takeoff, main(1), secondary(0)
+sys boolean passengersWaiting_takeoff_main;     //points that passenger are waiting to a depart from the main parking
+sys boolean passengersWaiting_takeoff_secondary;// points that passenger are waiting to a depart from the secondary parking
+sys boolean passengersWaiting_land_secondary;   // points that passenger are waiting to a pickup from the secondary parking after landing
+
+
+
+/* @===============@
+ * |  ASSUMPTIONS  |
+ * @===============@ 
+ */
+ 
+ /*
+  * This assumption leads the need for the project, people want's to fly safely outside and inside the country
+  */
+asm GF landRequest;       // there will be an infinite amount of times a request for landing
+asm GF departRequest;     // there will be an infinite amount of times a request for departure
+asm GF passengersArrived; // there will be an infinite amount of times a passenger who wants to fly
+
+/*
+ * This assumption make sure that sometimes in the future there will be no limit so we can use all the lanes 
+ */
+asm GF !isWindWest;     
+asm GF !isWindStrong;
+asm GF !birdsRadarNorth;
+asm GF !birdsRadarSouth;
+asm GF !isFoggy;
+asm GF !oneToFive; 
+/*
+ * make sure that the airport will be not lose for always, make it realistic. 
+ */
+asm GF !isFoggy & !birdsRadarNorth & !birdsRadarSouth & !oneToFive & !isWindWest & !isWindStrong;
+
+
+/*
+ * defines for making the code simple
+ */
+define planeLanded := (allowLand205 | allowLand076 | allowLand256 | allowLand025) & landRequest;
+define DepartGranted := (allowTakeOff205 | allowTakeOff076 | allowTakeOff256 | allowTakeOff025);
+define LandGranted := (allowLand205 | allowLand076 | allowLand256 | allowLand025);
+
+asm G departRequest & !DepartGranted -> next(departRequest); // make sure that request for departure will not despair
+asm G landRequest & !(LandGranted) -> next(landRequest);       // make sure that request for landing will not despair
+ 
+asm  numberOfPlanes < 1 -> !departRequest;       // if there is no planes in the parking, it's block the option to request a departure
+ 
+
+/* @===============@
+ * |   GUARANTEES   |
+ * @=============== @ 
+ */
+
+/*
+ * defines to make the code clean, defines availability of lanes
+ */
+define laneClosed:= !allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 & !allowLand256; // non of the lane is allow
+define T025Only :=  allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 & !allowLand256;     // Takeoff from 025 is allow
+define T076Only := !allowTakeOff025 &  allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 & !allowLand256;     // Takeoff from 076 is allow
+define T205Only := !allowTakeOff025 & !allowTakeOff076 &  allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 & !allowLand256;     // Takeoff from 205 is allow
+define T256Only := !allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 &  allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 & !allowLand256;     // Takeoff from 256 is allow
+define L025Only := !allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 &  allowLand025 & !allowLand076 & !allowLand205 & !allowLand256;     // Land on 025 is allow
+define L076Only := !allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 &  allowLand076 & !allowLand205 & !allowLand256;     // Land on 076 is allow 
+define L205Only := !allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 &  allowLand205 & !allowLand256;     // Land on 205 is allow 
+define L256Only := !allowTakeOff025 & !allowTakeOff076 & !allowTakeOff205 & !allowTakeOff256 & !allowLand025 & !allowLand076 & !allowLand205 &  allowLand256;    // Land on 256 is allow
+
+
+/*
+ * Ground guarantees
+ */
+gar GF greenbus;  //guarantee that sometimes in the future there will be a green light for the bus to cross the lane
+gar G (allowLand025 | allowLand205 | allowTakeOff205 | allowTakeOff025) -> !greenbus;  // the traffic light lane is in use, not allowing the bus to cross
+gar G (allowLand076 | allowLand256 | allowTakeOff076 | allowTakeOff256) -> greenbus;   // the traffic light lane is not in use, allowing the bus to cross
+/*
+ * if there is a green light the bus will change place
+ */
+gar G next(greenbus) -> (next(busLocation) != busLocation);
+/*
+ * if there is a red light the bus will stay
+ */
+gar G (busLocation & !next(greenbus)) -> next(busLocation);
+gar G (!busLocation & !next(greenbus)) -> next(!busLocation);
+/*
+ * if there are passengers who wait after land and the bus didn't pick them up, they will stay there 
+ */
+gar G (passengersWaiting_land_secondary & !(!busLocation & greenbus)) -> next(passengersWaiting_land_secondary);
+
+
+/*
+ * The main parking lot is limited to 5 planes at most due to the number of plane sleeves
+ */
+counter numberOfPlanesInMain(0..5){
+	numberOfPlanesInMain = 0;
+	inc: planeLanded & parkInMain;
+	dec: takeOffMain & !takeOffSec & DepartGranted & departRequest;
+	reset: false;
+	overflow: false;
+}
+//gar G numberOfPlanesInMain < 5;
+
+/*
+ * block the option to park in main if it's full
+ */
+gar G numberOfPlanesInMain = 5 -> !parkInMain;
+
+/*
+ * limit the number of airplanes in the airport
+ */
+counter numberOfPlanes(0..15){
+	numberOfPlanes = 0;
+	inc: planeLanded;
+	dec: (takeOffMain | takeOffSec) &  DepartGranted & departRequest;
+	reset: false;
+	overflow: false;
+}
+//gar G numberOfPlanes < 30;
+
+
+/*
+ * Aerial guarantees
+ */
+gar GF allowLand205;     // guarantee that sometimes in the future there will a permission to land on 205
+gar GF allowLand076;     // guarantee that sometimes in the future there will a permission to land on 076
+gar GF allowLand256;     // guarantee that sometimes in the future there will a permission to land on 256
+gar GF allowLand025;     // guarantee that sometimes in the future there will a permission to land on 025
+gar GF allowTakeOff205;  // guarantee that sometimes in the future there will a permission to takeoff on 205
+gar GF allowTakeOff076;  // guarantee that sometimes in the future there will a permission to takeoff on 076
+gar GF allowTakeOff025;  // guarantee that sometimes in the future there will a permission to takeoff on 025
+gar GF allowTakeOff256;  // guarantee that sometimes in the future there will a permission to takeoff on 256
+
+/*
+ * restricts to use only one lane at the airport for T/O or land at the same time
+ */  
+gar G (laneClosed) | (T025Only) | (T076Only) | (T205Only) | (T256Only) | (L025Only) | (L076Only) | (L205Only) | (L256Only);
+
+
+/*
+ * CTR rules
+ */
+
+/*
+ * give the preference to park at main
+ */
+gar G (planeLanded & (numberOfPlanesInMain < 5)) -> (parkInMain);
+
+/*
+ * give the preference to takeoff from the main
+ */
+gar G (departRequest & (numberOfPlanesInMain > 0)) -> (takeOffMain & !takeOffSec);
+/*
+ * block the option to takeoff from main if there are no airplanes at main
+ */
+gar G numberOfPlanesInMain <= 0 ->  !takeOffMain;
+/*
+ * check if exist what needs for a takeoff
+ */
+gar G ((departRequest) & DepartGranted) -> (takeOffSec | takeOffMain);
+
+
+gar G takeOffMain & departRequest & DepartGranted -> !takeOffSec;  // make sure that a plan weel go out only from one parking
+gar G !takeOffSec & departRequest & DepartGranted  -> takeOffMain; // make sure that a plan weel go out only from one parking
+
+
+/*
+ * make sure that passenger that landed will not disappear if they had not been taken from the sec parking
+ */
+gar G ((planeLanded & !parkInMain)| (passengersWaiting_land_secondary& busLocation)) <-> next(passengersWaiting_land_secondary);
+gar passengersWaiting_land_secondary = false; //initialize 
+
+/*
+ * make sure that a passenger who waits will always be collected
+ */
+gar G pRespondsToS(passengersWaiting_takeoff_secondary, busLocation);
+gar G pRespondsToS(passengersWaiting_land_secondary, !busLocation);
+
+
+/*
+ * make sure that passenger that what to fly will not disappear if they have not depart yet
+ */
+gar G ((passengersArrived & (numberOfPlanesInMain > 0)) | (passengersWaiting_takeoff_main & !takeOffMain)) <-> next(passengersWaiting_takeoff_main);
+gar passengersWaiting_takeoff_main = false; //initialize 
+gar G ((passengersArrived & (!(numberOfPlanesInMain > 0) & (numberOfPlanes > 0))) 
+	| (passengersWaiting_takeoff_secondary & !busLocation) 
+	| (passengersWaiting_takeoff_secondary & busLocation & !((numberOfPlanes - numberOfPlanesInMain)>0)))
+	<-> next(passengersWaiting_takeoff_secondary);
+gar passengersWaiting_takeoff_secondary = false; //initialize 
+ 
+/*
+ * nature & flight rules- safety rules reducing the probability for accidents
+ */
+gar G isFoggy -> !(allowLand025 | allowLand205 | allowTakeOff205 | allowTakeOff025 | allowTakeOff076 | allowTakeOff256 | allowLand076 | allowLand256 );
+gar G birdsRadarSouth -> !(allowLand025  | allowTakeOff205);
+gar G birdsRadarNorth -> !(allowTakeOff076 | allowTakeOff025 | allowLand205 | allowLand256);
+gar G oneToFive -> !(allowTakeOff076 | allowTakeOff256 | allowTakeOff205 | allowTakeOff025);
+gar G (isWindWest & !isWindStrong) ->  !(allowTakeOff076 | allowLand076);
+gar G (isWindWest & isWindStrong) ->  !(allowTakeOff076 | allowLand076 | allowTakeOff025 | allowLand025);
+
+

@@ -1,0 +1,211 @@
+import "patterns/DwyerPatterns.spectra"
+
+module Elevator
+
+
+// Constants
+define maxElevators := 3;
+define maxFloors := 5;
+
+
+// Type definitions
+type Elevators = Int(0..(maxElevators-1));
+type Floors = Int(0..(maxFloors-1));
+type DoorsMotorState = {OPENED, CLOSED};
+type DoorsMotorCmd = {OPEN, CLOSE, STOP};
+type LiftMotorCmd = {UP, DOWN, STOP};
+
+
+// Environment variables
+// Parametric elevators/floors
+// numElevators/numFloors are not the actual numbers, but the actual maximal index of elevators/floors. 
+// So for instance: 5 elevators -> numElevators = 4
+env Elevators numElevators;
+env Floors numFloors;
+// For each floor, a request for both up and down (calling for an elevator)
+env boolean[maxFloors][2] elevatorRequests;
+// For each elevator, requests for specific floors (choosing floors after entering the elevator)
+env boolean[maxElevators][maxFloors] floorRequests;
+//TODO: handle in next sprints
+env boolean[maxElevators] sabbathMode;
+env boolean[maxElevators] emergencyMode;
+
+env DoorsMotorState[maxElevators] doorsMotorState;
+env Floors[maxElevators] pos;
+
+// System variables
+sys DoorsMotorCmd[maxElevators] doorsMotorAction;
+sys LiftMotorCmd[maxElevators] liftMotorAction;
+
+
+// Predicates
+predicate keepMotorsAction(Elevators e): doorsMotorAction[e] = next(doorsMotorAction[e]) and liftMotorAction[e] = next(liftMotorAction[e]);
+predicate goUp(Elevators e): liftMotorAction[e] = UP;
+predicate goDown(Elevators e): liftMotorAction[e] = DOWN;
+predicate stayInPlace(Elevators e): liftMotorAction[e] = STOP;
+predicate openDoors(Elevators e): doorsMotorAction[e] = OPEN;
+predicate closeDoors(Elevators e): doorsMotorAction[e] = CLOSE;
+predicate stopDoors(Elevators e): doorsMotorAction[e] = STOP;
+predicate areDoorsOpened(Elevators e): doorsMotorState[e] = OPENED;
+predicate areDoorsClosed(Elevators e): doorsMotorState[e] = CLOSED;
+predicate keepDoorsState(Elevators e): doorsMotorState[e] = next(doorsMotorState[e]);
+predicate keepPos(Elevators e): pos[e] = next(pos[e]);
+predicate posSkipFloor(Elevators e): ((pos[e] - next(pos[e])) > 1 or (pos[e] - next(pos[e])) < -1);
+predicate doorsAdvanceStateWhenOpen(Elevators e): doorsMotorState[e] = CLOSED and next(doorsMotorState[e] = OPENED);
+predicate doorsAdvanceStateWhenClose(Elevators e): doorsMotorState[e] = OPENED and next(doorsMotorState[e] = CLOSED);
+predicate doorsDontCloseWhenShouldOpen(Elevators e): doorsMotorAction[e] = OPEN -> (doorsMotorState[e] = next(doorsMotorState[e]) or (doorsMotorState[e] = CLOSED and next(doorsMotorState[e] = OPENED)));
+predicate doorsDontOpenWhenShouldClose(Elevators e): doorsMotorAction[e] = CLOSE -> (doorsMotorState[e] = next(doorsMotorState[e]) or (doorsMotorState[e] = OPENED and next(doorsMotorState[e] = CLOSED)));
+predicate posIncreased(Elevators e): pos[e] - next(pos[e]) < 0;
+predicate posDecreased(Elevators e): pos[e] - next(pos[e]) > 0;
+predicate posDontGoUpWhenShouldGoDown(Elevators e): liftMotorAction[e] = DOWN -> !(pos[e] - next(pos[e]) < 0);
+predicate posDontGoDownWhenShouldGoUp(Elevators e): liftMotorAction[e] = UP -> !(pos[e] - next(pos[e]) > 0);
+predicate isRequestDown(Floors f): elevatorRequests[f][0] = true;
+predicate isRequestUp(Floors f): elevatorRequests[f][1] = true;
+predicate isFloorRequest(Elevators e, Floors f): floorRequests[e][f] = true;
+predicate isSabbathMode(Elevators e): sabbathMode[e] = true;
+predicate isEmergencyMode(Elevators e): emergencyMode[e] = true;
+predicate isPos(Elevators e, Floors f): pos[e] = f;
+predicate isMaxPos(Elevators e): pos[e] = numFloors;
+predicate isMinPos(Elevators e): pos[e] = 0;
+// Assumptions
+
+// Parameters do not change during execution
+asm G numElevators = next(numElevators);
+asm G numFloors = next(numFloors);
+// Ignore elevators out of parametric range
+asm ignoreElevators:
+	G (forall e in Elevators. ((e > numElevators) -> keepPos(e)));
+
+// Ignore floors out of parametric range
+asm ignoreFloorRequests:
+	G (forall f in Floors. forall e in Elevators. ((f > numFloors) -> (floorRequests[e][f] = false)));
+asm ignoreElevatorRequests:
+	G (forall f in Floors. ((f > numFloors) -> (elevatorRequests[f][0] = false and elevatorRequests[f][1] = false)));
+
+// Initial assumptions
+asm initElevatorRequests:
+	forall f in Floors. !isRequestDown(f) and !isRequestUp(f);
+
+asm initFloorRequests:
+	forall e in Elevators. forall f in Floors. !isFloorRequest(e, f);
+
+asm initSabbathMode:
+	forall e in Elevators. !isSabbathMode(e);
+	
+
+asm initEmergencyMode:
+	forall e in Elevators. !isEmergencyMode(e);
+	
+asm initDoorsMotorState:
+	forall e in Elevators. areDoorsClosed(e);
+
+asm initPos:
+	forall e in Elevators. isPos(e, 0);
+	
+// Safety assumptions
+
+asm keepDoorsStateWhenStopDoors:
+	G (forall e in Elevators. (stopDoors(e) -> (keepDoorsState(e))));
+	
+asm doorsMoveInRightDirection:
+	G (forall e in Elevators. (doorsDontCloseWhenShouldOpen(e) and doorsDontOpenWhenShouldClose(e)));
+	
+asm keepPosWhenStayInPlace:
+	G (forall e in Elevators. (stayInPlace(e) -> (keepPos(e))));
+	
+asm posMoveContinously:
+	G (forall e in Elevators. (!posSkipFloor(e)));
+	
+asm posMoveInRightDirection:
+	G (forall e in Elevators. (posDontGoUpWhenShouldGoDown(e) and posDontGoDownWhenShouldGoUp(e)));
+	
+
+// Liveness assumptions
+asm posFinallyIncrease0:
+	pRespondsToS(goUp(0) and !isMaxPos(0), posIncreased(0) or !goUp(0));
+asm posFinallyIncrease1:
+	pRespondsToS(goUp(1) and !isMaxPos(1), posIncreased(1) or !goUp(1));
+asm posFinallyIncrease2:
+	pRespondsToS(goUp(2) and !isMaxPos(2), posIncreased(2) or !goUp(2));
+
+asm posFinallyDecrease0:
+	pRespondsToS(goDown(0) and !isMinPos(0), posDecreased(0) or !goDown(0));
+asm posFinallyDecrease1:
+	pRespondsToS(goDown(1) and !isMinPos(1), posDecreased(1) or !goDown(1));
+asm posFinallyDecrease2:
+	pRespondsToS(goDown(2) and !isMinPos(2), posDecreased(2) or !goDown(2));
+
+	
+
+
+// Not elegant, but we did not find a better solution until Spectra allows patterns inside quantifiers
+asm doorsFinallyOpen0:
+	pRespondsToS(openDoors(0) & !areDoorsOpened(0), doorsAdvanceStateWhenOpen(0) | !openDoors(0));
+asm doorsFinallyOpen1:
+	pRespondsToS(openDoors(1) & !areDoorsOpened(1), doorsAdvanceStateWhenOpen(1) | !openDoors(1));
+asm doorsFinallyOpen2:
+	pRespondsToS(openDoors(2) & !areDoorsOpened(2), doorsAdvanceStateWhenOpen(2) | !openDoors(2));
+
+asm doorsFinallyClose0:
+	pRespondsToS(closeDoors(0) & !areDoorsClosed(0), doorsAdvanceStateWhenClose(0) | !closeDoors(0));
+asm doorsFinallyClose1:
+	pRespondsToS(closeDoors(1) & !areDoorsClosed(1), doorsAdvanceStateWhenClose(1) | !closeDoors(1));
+asm doorsFinallyClose2:
+	pRespondsToS(closeDoors(2) & !areDoorsClosed(2), doorsAdvanceStateWhenClose(2) | !closeDoors(2));
+	
+	
+
+// Guarantees
+// Initial guarantees
+	
+gar initDoorsMotorAction:
+	forall e in Elevators. stopDoors(e);
+	
+gar initLiftMotorAction:
+	forall e in Elevators. stayInPlace(e);
+
+
+// Safety guarantees
+
+gar ifMinFloorDontGoDown:
+	G (forall e in Elevators. (isMinPos(e) -> !goDown(e)));
+
+gar ifMaxFloorDontGoUp:
+	G (forall e in Elevators. (isMaxPos(e) -> !goUp(e)));
+
+gar ifDoorsClosedDontClose:
+	G (forall e in Elevators. (areDoorsClosed(e) -> !closeDoors(e)));
+	
+gar ifDoorsOpenedDontOpen:
+	G (forall e in Elevators. (areDoorsOpened(e) -> !openDoors(e)));
+	
+gar dontChangeDirectionWithoutStopping:
+	G (forall e in Elevators. ((goUp(e) -> next(!goDown(e))) and (goDown(e) -> next(!goUp(e)))));
+	
+gar dontMoveDoorsWhileMoving:
+	G forall e in Elevators. (!stayInPlace(e) -> stopDoors(e));
+
+gar dontMoveWithOpenedDoors:
+	G forall e in Elevators. (!stayInPlace(e) -> areDoorsClosed(e));
+	
+
+
+// Liveness guarantees
+
+gar elevatorRequestFinallyFullfilled0:
+	GF (elevatorRequests[0][0] = false and elevatorRequests[0][1] = false);
+
+gar elevatorRequestFinallyFullfilled1:
+	GF (elevatorRequests[1][0] = false and elevatorRequests[1][1] = false);
+	
+gar elevatorRequestFinallyFullfilled2:
+	GF (elevatorRequests[2][0] = false and elevatorRequests[2][1] = false);
+	
+gar elevatorRequestFinallyFullfilled3:
+	GF (elevatorRequests[3][0] = false and elevatorRequests[3][1] = false);
+	
+gar elevatorRequestFinallyFullfilled4:
+	GF (elevatorRequests[4][0] = false and elevatorRequests[4][1] = false);
+
+gar disableElevatorRequest:
+	G (forall e in Elevators. (forall f in Floors. ((pos[e] = f and doorsMotorState[e] = OPENED) -> (next(elevatorRequests[f][0]) = false and next(elevatorRequests[f][1] = false)))));
