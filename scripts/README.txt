@@ -1,4 +1,4 @@
-In this folder there are several script for translating different formats:
+In this folder there are several scripts for translating between different formats:
 
 The main script is generate_specs.py:
 -------------------------------------
@@ -44,4 +44,4 @@ The generators from vmcai08 (2):
         - n variables of stateG2 for guarantee 1: stateG2_0, stateG2_1,..., stateG2_(n-1)
         - Number of bits representing n is k:
             k variables of stateA1 for assumption 1: stateA1_0, stateA1_1,..., stateA1_(k-1)
-		- All these variablea are used in additional safeties.
+		- All these variables are used in additional safeties.
