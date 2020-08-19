@@ -1,0 +1,86 @@
+import "DwyerPatterns.spectra"
+
+module amba_ahb_realizable_amba_ahb_3
+
+type Burst = {SINGLE, BURST4, INCR};
+
+define MASTER_NUM := 3;
+define MASTER_MAX := 2;
+
+env boolean[MASTER_NUM] hbusreq;
+env Burst hburst;
+env boolean[MASTER_NUM] hlock;
+env boolean hready; 
+
+sys boolean[MASTER_NUM] hgrant;
+sys Int(0..MASTER_MAX) hmaster;
+sys boolean hmastlock;
+sys boolean start;
+sys boolean decide;
+sys boolean locked;
+sys Int(0..4) hready_counter;
+
+gar hready_counter = 0;
+gar G ((locked_4_burst & start) & !hready) -> (next(hready_counter) = 0);
+gar G ((locked_4_burst & start) & hready) -> (next(hready_counter) = 1);
+gar G (!(locked_4_burst & start) & hready & hready_counter < 4) -> (next(hready_counter) = hready_counter + 1);
+gar G (!(locked_4_burst & start) & hready & hready_counter = 4) -> (next(hready_counter) = 4);
+gar G (!(locked_4_burst & start) & !hready) -> (next(hready_counter) = hready_counter);
+
+predicate locked_unspec_burst(Int(0..MASTER_MAX) master):
+	hmastlock & hburst = INCR & hmaster = master;
+define locked_4_burst := hmastlock & hburst = BURST4;
+
+// A1
+asm A10{Int(0..MASTER_MAX) i}: pRespondsToS(locked_unspec_burst(i), next(!hbusreq[i]));
+
+// A2
+asm A20: GF hready;
+
+// A3
+asm A30: G forall i in Int(0..MASTER_MAX) . hlock[i] -> hbusreq[i]; 
+
+// G1
+gar G10: G !hready -> next(!start);
+
+// G2
+gar G20{Int(0..MASTER_MAX) i}: pBecomesTrue_betweenQandR(!hbusreq[i], locked_unspec_burst(i) & start, next(start));
+
+// G3
+gar G30: pBecomesTrue_betweenQandR(next(hready_counter) = 4, locked_4_burst & start, next(start));
+
+// G4
+gar G40: G forall i in Int(0..MASTER_MAX) . hready -> (hgrant[i] = next(hmaster = i));
+
+// G5
+gar G50: G hready -> (locked <-> next(hmastlock));
+
+// G6
+gar G60: G forall i in Int(0..MASTER_MAX) . next(!start) -> (hmaster = i <-> next(hmaster = i));
+gar G64: G next(!start) -> (hmastlock <-> next(hmastlock));
+
+// G7
+gar G70: G forall i in Int(0..MASTER_MAX) . (decide & next(hgrant[i])) -> (hlock[i] <-> next(locked));
+
+// G8
+gar G80: G forall i in Int(0..MASTER_MAX) . !decide -> (hgrant[i] = next(hgrant[i]));
+gar G84: G !decide -> (locked = next(locked));
+
+// G9
+gar G90{Int(0..MASTER_MAX) i}: pRespondsToS(hbusreq[i], !hbusreq[i] | hmaster = i);
+
+// G10
+gar G100{Int(1..MASTER_MAX) i}: pBecomesTrue_betweenQandR(hbusreq[i], !hgrant[i], hgrant[i]);
+
+// G11
+gar decide;
+gar start;
+gar !locked;
+gar hmaster = 0;
+gar !hmastlock;
+gar hgrant[0];
+gar G110: forall i in Int(1..MASTER_MAX) . !hgrant[i];
+
+// A4
+asm !hready;
+asm A40: forall i in Int(0..MASTER_MAX) . !hbusreq[i] & !hlock[i];
